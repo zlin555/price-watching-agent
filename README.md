@@ -1,3 +1,13 @@
+---
+title: Price Watching Agent
+emoji: 💸
+colorFrom: teal
+colorTo: amber
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Price Watcher Platform
 
 用户自定义比价与提醒网站初始项目。
