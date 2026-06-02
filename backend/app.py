@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import requests
 from bs4 import BeautifulSoup
+from backend.scrapers import PriceCandidate, extract_price_candidates, fetch_selected_price
 
 
 app = FastAPI(title="PricePilot API", version="0.1.0")
@@ -67,6 +68,10 @@ class WatchCreate(BaseModel):
     direction: Literal["below", "above", "change"]
     check_interval_minutes: int = Field(default=60, ge=5, le=10080)
     contact: str | None = None
+    extraction_strategy: str | None = None
+    extraction_selector: str | None = None
+    extraction_label: str | None = None
+    extraction_confidence: float | None = None
 
 
 class WatchItem(WatchCreate):
@@ -78,6 +83,17 @@ class WatchItem(WatchCreate):
     next_check_at: datetime | None = None
     status: Literal["idle", "due", "checking", "ok", "failed"] = "idle"
     last_error: str | None = None
+    last_candidates: list[dict[str, str | float | None]] = Field(default_factory=list)
+
+
+class ExtractPreviewRequest(BaseModel):
+    target: str
+
+
+class ExtractPreviewResponse(BaseModel):
+    target: str
+    candidates: list[dict[str, str | float | None]]
+    error: str | None = None
 
 
 class PricePoint(BaseModel):
@@ -382,85 +398,13 @@ def fetch_stock_price(symbol: str) -> tuple[float | None, str | None]:
     return float(price), None
 
 
-def fetch_latest_price(target: str) -> tuple[float | None, str | None]:
-    stock_symbol = extract_stock_symbol(target)
-    if stock_symbol:
-        stock_price, stock_error = fetch_stock_price(stock_symbol)
-        if stock_price is not None:
-            return stock_price, None
-        if not target.startswith(("http://", "https://")):
-            return None, stock_error
-
-    if not target.startswith(("http://", "https://")):
-        return None, "Only URL targets can be scraped in the current backend"
-
-    try:
-        response = requests.get(
-            target,
-            timeout=12,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
-                )
-            },
-        )
-        response.raise_for_status()
-    except requests.RequestException as error:
-        return None, str(error)
-
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    json_ld_prices: list[float] = []
-    for script in soup.select("script[type='application/ld+json']"):
-        for raw_value in re.findall(r'"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', script.get_text()):
-            price = parse_numeric_price(raw_value)
-            if price:
-                json_ld_prices.append(price)
-    if json_ld_prices:
-        return json_ld_prices[0], None
-
-    meta_selectors = [
-        "meta[property='product:price:amount']",
-        "meta[property='og:price:amount']",
-        "meta[name='twitter:data1']",
-        "meta[name='price']",
-    ]
-    for selector in meta_selectors:
-        for element in soup.select(selector):
-            price = parse_numeric_price(element.get("content"))
-            if price:
-                return price, None
-
-    selectors = [
-        "[itemprop='price']",
-        "[data-testid*='price' i]",
-        "[class*='price' i]",
-        "[id*='price' i]",
-        "[aria-label*='price' i]",
-    ]
-    for selector in selectors:
-        for element in soup.select(selector):
-            raw_value = (
-                element.get("content")
-                or element.get("value")
-                or element.get("aria-label")
-                or element.get_text(" ", strip=True)
-            )
-            nearby_text = element.parent.get_text(" ", strip=True) if element.parent else raw_value
-            price = extract_price_from_text(raw_value) or extract_price_from_text(nearby_text)
-            if price:
-                return price, None
-
-    title_text = " ".join(
-        node.get_text(" ", strip=True)
-        for node in soup.select("h1, [data-testid*='quote' i], [class*='quote' i], [class*='stock' i]")
-    )
-    if title_text:
-        price = extract_price_from_text(title_text)
-        if price:
-            return price, None
-    return None, "No price-like value found on page"
+def fetch_latest_price(
+    target: str,
+    strategy: str | None = None,
+    selector: str | None = None,
+) -> tuple[float | None, str | None, list[dict[str, str | float | None]]]:
+    price, error, candidates = fetch_selected_price(target, strategy=strategy, selector=selector)
+    return price, error, [candidate.__dict__ for candidate in candidates]
 
 
 def scrape_store_products(store_url: str) -> tuple[list[dict[str, str | float | None]], str | None]:
@@ -516,8 +460,13 @@ def scrape_store_products(store_url: str) -> tuple[list[dict[str, str | float | 
 
 def refresh_watch_price(watch: WatchItem) -> WatchItem:
     watch.status = "checking"
-    price, error = fetch_latest_price(watch.target)
+    price, error, candidates = fetch_latest_price(
+        watch.target,
+        strategy=watch.extraction_strategy,
+        selector=watch.extraction_selector,
+    )
     now = datetime.now(timezone.utc)
+    watch.last_candidates = candidates
 
     if price is None:
         watch.status = "failed"
@@ -624,6 +573,16 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/extract/preview", response_model=ExtractPreviewResponse)
+def preview_extraction(payload: ExtractPreviewRequest) -> ExtractPreviewResponse:
+    candidates, error = extract_price_candidates(payload.target)
+    return ExtractPreviewResponse(
+        target=payload.target,
+        candidates=[candidate.__dict__ for candidate in candidates],
+        error=error,
+    )
+
+
 @app.post("/auth/register", response_model=AuthResponse)
 def register(payload: UserCreate) -> AuthResponse | JSONResponse:
     if payload.phone in users:
@@ -713,7 +672,11 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
     if not phone:
         return auth_error()
 
-    fetched_price, fetch_error = fetch_latest_price(payload.target)
+    fetched_price, fetch_error, candidates = fetch_latest_price(
+        payload.target,
+        strategy=payload.extraction_strategy,
+        selector=payload.extraction_selector,
+    )
     now = datetime.now(timezone.utc)
     watch = WatchItem(
         id=len(demo_watches) + 1,
@@ -725,6 +688,7 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
         next_check_at=now + timedelta(minutes=payload.check_interval_minutes),
         status="ok" if fetched_price is not None else "failed",
         last_error=fetch_error,
+        last_candidates=candidates,
         **payload.model_dump(exclude={"contact"}),
     )
     demo_watches.append(watch)

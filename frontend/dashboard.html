@@ -127,6 +127,13 @@
             <span>商品链接 / 旅行链接 / 股票代码</span>
             <input id="watch-target" type="text" value="https://example.com/product" />
           </label>
+          <div class="preview-row">
+            <button class="secondary-link" id="preview-price" type="button">预览可追踪价格</button>
+            <span id="preview-status">先预览，再选择一个价格来源</span>
+          </div>
+          <fieldset class="candidate-list hidden" id="price-candidates">
+            <legend>候选价格</legend>
+          </fieldset>
           <div class="form-grid">
             <label>
               <span>目标价格</span>

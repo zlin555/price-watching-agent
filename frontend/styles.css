@@ -745,6 +745,75 @@ dd {
   font-weight: 800;
 }
 
+.preview-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.preview-row .secondary-link {
+  justify-content: center;
+  min-height: 42px;
+}
+
+#preview-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.candidate-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.candidate-list legend {
+  color: var(--accent-dark);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.candidate-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
+.candidate-option input {
+  width: auto;
+  min-height: auto;
+  margin-top: 4px;
+}
+
+.candidate-option span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.candidate-option strong {
+  color: var(--accent-dark);
+}
+
+.candidate-option b,
+.candidate-option em,
+.candidate-option small {
+  color: var(--muted);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
 .hidden {
   display: none;
 }

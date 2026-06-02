@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS price_watches (
   current_price NUMERIC(12, 2),
   status TEXT NOT NULL DEFAULT 'idle',
   last_error TEXT,
+  extraction_strategy TEXT,
+  extraction_selector TEXT,
+  extraction_label TEXT,
+  extraction_confidence NUMERIC(5, 2),
+  last_candidates JSONB NOT NULL DEFAULT '[]',
   last_checked_at TIMESTAMPTZ,
   next_check_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()

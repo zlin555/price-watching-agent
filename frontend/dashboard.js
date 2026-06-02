@@ -16,6 +16,9 @@ const panelWatchCount = document.querySelector("#panel-watch-count");
 const panelStatus = document.querySelector("#panel-status");
 const newWatchForm = document.querySelector("#new-watch-form");
 const watchMessage = document.querySelector("#watch-message");
+const previewPriceButton = document.querySelector("#preview-price");
+const previewStatus = document.querySelector("#preview-status");
+const priceCandidates = document.querySelector("#price-candidates");
 const userMenuButton = document.querySelector("#user-menu-button");
 const userPanel = document.querySelector("#user-panel");
 const notificationPhoneInput = document.querySelector("#notification-phone");
@@ -27,6 +30,7 @@ const refreshButton = document.querySelector("#refresh-watch");
 
 let watches = [];
 let selectedWatchId = null;
+let selectedPriceCandidate = null;
 let usingLocalDemo = token && token.startsWith("local_");
 
 if (!token) {
@@ -148,6 +152,7 @@ async function selectWatch(watchId) {
     <span>目标价 $${watch.target_price}</span>
     <span>${watch.check_interval_minutes || 60} 分钟检索一次</span>
     <span>下次检索 ${formatTime(watch.next_check_at)}</span>
+    <span>来源 ${watch.extraction_strategy || "自动选择"}</span>
     <span>${watch.target}</span>
   `;
   renderWatches();
@@ -187,6 +192,61 @@ async function deleteWatch(watchId) {
   await loadWatches();
 }
 
+previewPriceButton.addEventListener("click", async () => {
+  const target = document.querySelector("#watch-target").value.trim();
+  selectedPriceCandidate = null;
+  previewStatus.textContent = "正在识别页面里的价格...";
+  priceCandidates.classList.add("hidden");
+  priceCandidates.innerHTML = "<legend>候选价格</legend>";
+
+  let candidates = getLocalPriceCandidates(target);
+  let error = "";
+
+  if (!usingLocalDemo) {
+    try {
+      const response = await fetch(`${API_BASE}/extract/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target }),
+      });
+      const data = await response.json();
+      candidates = data.candidates || [];
+      error = data.error || "";
+    } catch {
+      usingLocalDemo = true;
+    }
+  }
+
+  if (candidates.length === 0) {
+    previewStatus.textContent = error || "没有识别到候选价格，可以换链接或直接保存为待检索任务";
+    return;
+  }
+
+  priceCandidates.classList.remove("hidden");
+  candidates.forEach((candidate, index) => {
+    const option = document.createElement("label");
+    option.className = "candidate-option";
+    option.innerHTML = `
+      <input type="radio" name="price-candidate" value="${index}" ${index === 0 ? "checked" : ""}>
+      <span>
+        <strong>$${candidate.price}</strong>
+        <b>${Math.round((candidate.confidence || 0) * 100)}% confidence</b>
+        <em>${candidate.strategy}${candidate.selector ? ` · ${candidate.selector}` : ""}</em>
+        <small>${candidate.snippet || candidate.label}</small>
+      </span>
+    `;
+    option.querySelector("input").addEventListener("change", () => {
+      selectedPriceCandidate = candidate;
+      document.querySelector("#watch-price").value = candidate.price;
+    });
+    priceCandidates.appendChild(option);
+  });
+
+  selectedPriceCandidate = candidates[0];
+  document.querySelector("#watch-price").value = candidates[0].price;
+  previewStatus.textContent = `识别到 ${candidates.length} 个候选价格，请确认要追踪哪一个`;
+});
+
 newWatchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   watchMessage.textContent = "正在添加...";
@@ -197,6 +257,10 @@ newWatchForm.addEventListener("submit", async (event) => {
     target_price: Number(document.querySelector("#watch-price").value),
     direction: document.querySelector("#watch-direction").value,
     check_interval_minutes: Number(document.querySelector("#watch-interval").value),
+    extraction_strategy: selectedPriceCandidate?.strategy || null,
+    extraction_selector: selectedPriceCandidate?.selector || null,
+    extraction_label: selectedPriceCandidate?.label || null,
+    extraction_confidence: selectedPriceCandidate?.confidence || null,
   };
 
   if (usingLocalDemo) {
@@ -206,7 +270,11 @@ newWatchForm.addEventListener("submit", async (event) => {
       id: Date.now(),
       owner_phone: phone,
       contact: phone,
-      current_price: Number((payload.target_price * 1.08).toFixed(2)),
+      current_price: selectedPriceCandidate ? Number(selectedPriceCandidate.price) : null,
+      extraction_strategy: payload.extraction_strategy,
+      extraction_selector: payload.extraction_selector,
+      extraction_label: payload.extraction_label,
+      extraction_confidence: payload.extraction_confidence,
       created_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
       next_check_at: new Date(Date.now() + payload.check_interval_minutes * 60 * 1000).toISOString(),
@@ -744,6 +812,42 @@ function getLocalProducts(watch) {
       score: 41.9,
       matched: false,
       discovered_at: new Date().toISOString(),
+    },
+  ];
+}
+
+function getLocalPriceCandidates(target) {
+  const stockMatch = target.match(/(?:stocks\/|quote\/)?([A-Z]{2,6})(?:\?|$)/i);
+  if (stockMatch || /^[A-Z]{2,6}$/i.test(target)) {
+    const symbol = (stockMatch?.[1] || target).toUpperCase();
+    return [
+      {
+        price: symbol === "NVDA" ? 226.06 : 143.2,
+        label: `${symbol} market price`,
+        strategy: "stock_api",
+        selector: symbol,
+        confidence: 0.98,
+        snippet: `Demo market quote for ${symbol}`,
+      },
+    ];
+  }
+
+  return [
+    {
+      price: 89.99,
+      label: "Structured product price",
+      strategy: "json_ld",
+      selector: "script[type='application/ld+json']",
+      confidence: 0.92,
+      snippet: "Product schema price",
+    },
+    {
+      price: 99.99,
+      label: "Visible sale price",
+      strategy: "selector",
+      selector: "[class*='price' i]",
+      confidence: 0.72,
+      snippet: "Sale price $99.99",
     },
   ];
 }
