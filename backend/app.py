@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
 import math
+import os
 import re
 import secrets
 from urllib.parse import urljoin
@@ -11,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+import psycopg
+from psycopg.rows import dict_row
 import requests
 from bs4 import BeautifulSoup
 from backend.scrapers import PriceCandidate, extract_price_candidates, fetch_selected_price
@@ -40,6 +43,7 @@ class LoginRequest(BaseModel):
 
 
 class UserProfile(BaseModel):
+    id: int | None = None
     phone: str
     notification_phone: str
     avatar_data_url: str | None = None
@@ -152,6 +156,107 @@ price_history: dict[int, list[PricePoint]] = {}
 store_watches: list[StoreWatchItem] = []
 discovered_products: list[DiscoveredProduct] = []
 notification_events: list[NotificationEvent] = []
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def database_enabled() -> bool:
+    return bool(DATABASE_URL)
+
+
+def get_db_connection():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not configured")
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def init_database() -> None:
+    if not database_enabled():
+        return
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                  id BIGSERIAL PRIMARY KEY,
+                  phone TEXT UNIQUE NOT NULL,
+                  notification_phone TEXT NOT NULL,
+                  password_hash TEXT NOT NULL,
+                  password_salt TEXT NOT NULL,
+                  avatar_url TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        conn.commit()
+
+
+def db_get_user(phone: str) -> dict | None:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, phone, notification_phone, password_hash, password_salt, avatar_url, created_at
+                FROM users
+                WHERE phone = %s
+                """,
+                (phone,),
+            )
+            return cur.fetchone()
+
+
+def db_create_user(phone: str, salt: str, password_hash: str) -> dict:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (phone, notification_phone, password_hash, password_salt)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, phone, notification_phone, password_hash, password_salt, avatar_url, created_at
+                """,
+                (phone, phone, password_hash, salt),
+            )
+            user = cur.fetchone()
+        conn.commit()
+    return user
+
+
+def db_update_profile(
+    phone: str,
+    notification_phone: str | None = None,
+    avatar_data_url: str | None = None,
+) -> dict:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET
+                  notification_phone = COALESCE(%s, notification_phone),
+                  avatar_url = COALESCE(%s, avatar_url),
+                  updated_at = now()
+                WHERE phone = %s
+                RETURNING id, phone, notification_phone, password_hash, password_salt, avatar_url, created_at
+                """,
+                (notification_phone, avatar_data_url, phone),
+            )
+            user = cur.fetchone()
+        conn.commit()
+    return user
+
+
+def db_update_password(phone: str, salt: str, password_hash: str) -> None:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET password_salt = %s, password_hash = %s, updated_at = now()
+                WHERE phone = %s
+                """,
+                (salt, password_hash, phone),
+            )
+        conn.commit()
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
@@ -279,9 +384,10 @@ seed_demo_data()
 
 def user_profile_from_record(user: dict[str, str | datetime]) -> UserProfile:
     return UserProfile(
+        id=user.get("id"),
         phone=str(user["phone"]),
         notification_phone=str(user.get("notification_phone") or user["phone"]),
-        avatar_data_url=user.get("avatar_data_url"),
+        avatar_data_url=user.get("avatar_data_url") or user.get("avatar_url"),
         created_at=user["created_at"],
     )
 
@@ -565,6 +671,7 @@ async def background_price_checker() -> None:
 @app.on_event("startup")
 async def start_background_checker() -> None:
     global background_checker_task
+    init_database()
     background_checker_task = asyncio.create_task(background_price_checker())
 
 
@@ -585,6 +692,16 @@ def preview_extraction(payload: ExtractPreviewRequest) -> ExtractPreviewResponse
 
 @app.post("/auth/register", response_model=AuthResponse)
 def register(payload: UserCreate) -> AuthResponse | JSONResponse:
+    if database_enabled():
+        existing_user = db_get_user(payload.phone)
+        if existing_user:
+            return JSONResponse(status_code=409, content={"detail": "Phone number already registered"})
+        salt, password_hash = hash_password(payload.password)
+        user = db_create_user(payload.phone, salt, password_hash)
+        token = secrets.token_urlsafe(32)
+        sessions[token] = payload.phone
+        return AuthResponse(token=token, user=user_profile_from_record(user))
+
     if payload.phone in users:
         return JSONResponse(status_code=409, content={"detail": "Phone number already registered"})
 
@@ -605,6 +722,17 @@ def register(payload: UserCreate) -> AuthResponse | JSONResponse:
 
 @app.post("/auth/login", response_model=AuthResponse)
 def login(payload: LoginRequest) -> AuthResponse | JSONResponse:
+    if database_enabled():
+        user = db_get_user(payload.phone)
+        if not user:
+            return JSONResponse(status_code=401, content={"detail": "Invalid phone or password"})
+        is_valid = verify_password(payload.password, str(user["password_salt"]), str(user["password_hash"]))
+        if not is_valid:
+            return JSONResponse(status_code=401, content={"detail": "Invalid phone or password"})
+        token = secrets.token_urlsafe(32)
+        sessions[token] = payload.phone
+        return AuthResponse(token=token, user=user_profile_from_record(user))
+
     user = users.get(payload.phone)
     if not user:
         return JSONResponse(status_code=401, content={"detail": "Invalid phone or password"})
@@ -626,6 +754,11 @@ def profile(token: str | None = None) -> UserProfile | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
         return auth_error()
+    if database_enabled():
+        user = db_get_user(phone)
+        if not user:
+            return auth_error()
+        return user_profile_from_record(user)
     return user_profile_from_record(users[phone])
 
 
@@ -634,6 +767,16 @@ def update_profile(payload: UserSettingsUpdate, token: str | None = None) -> Use
     phone = find_user_from_token(token)
     if not phone:
         return auth_error()
+    if database_enabled():
+        user = db_update_profile(
+            phone,
+            notification_phone=payload.notification_phone,
+            avatar_data_url=payload.avatar_data_url,
+        )
+        if not user:
+            return auth_error()
+        return user_profile_from_record(user)
+
     user = users[phone]
     if payload.notification_phone is not None:
         user["notification_phone"] = payload.notification_phone
@@ -647,6 +790,17 @@ def update_password(payload: PasswordUpdate, token: str | None = None) -> dict[s
     phone = find_user_from_token(token)
     if not phone:
         return auth_error()
+    if database_enabled():
+        user = db_get_user(phone)
+        if not user:
+            return auth_error()
+        is_valid = verify_password(payload.current_password, str(user["password_salt"]), str(user["password_hash"]))
+        if not is_valid:
+            return JSONResponse(status_code=401, content={"detail": "Current password is incorrect"})
+        salt, password_hash = hash_password(payload.new_password)
+        db_update_password(phone, salt, password_hash)
+        return {"status": "password updated"}
+
     user = users[phone]
     is_valid = verify_password(payload.current_password, str(user["salt"]), str(user["password_hash"]))
     if not is_valid:
