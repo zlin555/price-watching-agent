@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS price_watches (
   current_price NUMERIC(12, 2),
   status TEXT NOT NULL DEFAULT 'idle',
   last_error TEXT,
+  extraction_key TEXT,
   extraction_strategy TEXT,
   extraction_selector TEXT,
   extraction_label TEXT,

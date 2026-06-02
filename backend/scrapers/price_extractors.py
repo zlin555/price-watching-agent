@@ -15,6 +15,7 @@ class PriceCandidate:
     price: float
     label: str
     strategy: str
+    key: str
     selector: str | None = None
     confidence: float = 0.5
     snippet: str | None = None
@@ -64,6 +65,7 @@ def fetch_stock_candidate(symbol: str) -> PriceCandidate | None:
         price=price,
         label=f"{symbol} market price ${price}",
         strategy="stock_api",
+        key=f"stock_api:{symbol}",
         selector=symbol,
         confidence=0.98,
         snippet=f"Yahoo Finance quote for {symbol}",
@@ -110,6 +112,7 @@ def add_candidate(
     price: float | None,
     label: str,
     strategy: str,
+    key: str,
     selector: str | None,
     confidence: float,
     snippet: str | None = None,
@@ -125,6 +128,7 @@ def add_candidate(
             price=price,
             label=label[:160],
             strategy=strategy,
+            key=key,
             selector=selector,
             confidence=round(confidence, 2),
             snippet=snippet[:240] if snippet else None,
@@ -170,7 +174,7 @@ def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate]
         else:
             values.extend(re.findall(r'"(?:price|lowPrice)"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', raw))
 
-        for value in values:
+        for value_index, value in enumerate(values):
             price = parse_numeric_price(str(value))
             add_candidate(
                 candidates,
@@ -178,6 +182,7 @@ def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate]
                 price,
                 f"Structured product price ${price}",
                 "json_ld",
+                f"json_ld:{index}:{value_index}",
                 f"script[type='application/ld+json']:eq({index})",
                 0.92,
                 raw,
@@ -192,10 +197,20 @@ def extract_meta_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
         "meta[name='price']",
     ]
     for selector in selectors:
-        for element in soup.select(selector):
+        for element_index, element in enumerate(soup.select(selector)):
             content = element.get("content")
             price = parse_numeric_price(content)
-            add_candidate(candidates, seen, price, f"Meta price ${price}", "meta", selector, 0.86, content)
+            add_candidate(
+                candidates,
+                seen,
+                price,
+                f"Meta price ${price}",
+                "meta",
+                f"meta:{selector}:{element_index}",
+                selector,
+                0.86,
+                content,
+            )
 
 
 def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str | None]]) -> None:
@@ -207,7 +222,7 @@ def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate
         "[aria-label*='price' i]",
     ]
     for selector in selectors:
-        for element in soup.select(selector)[:30]:
+        for element_index, element in enumerate(soup.select(selector)[:30]):
             raw = (
                 element.get("content")
                 or element.get("value")
@@ -215,13 +230,14 @@ def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate
                 or element.get_text(" ", strip=True)
             )
             context = element.parent.get_text(" ", strip=True) if element.parent else raw
-            for price in prices_from_text(raw) or prices_from_text(context):
+            for price_index, price in enumerate(prices_from_text(raw) or prices_from_text(context)):
                 add_candidate(
                     candidates,
                     seen,
                     price,
                     f"{raw[:80]}",
                     "selector",
+                    f"selector:{selector}:{element_index}:{price_index}",
                     selector,
                     0.72,
                     context,
@@ -233,15 +249,35 @@ def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
         node.get_text(" ", strip=True)
         for node in soup.select("h1, h2, [class*='hero' i], [class*='quote' i], [class*='stock' i]")
     )
-    for price in prices_from_text(priority_text):
-        add_candidate(candidates, seen, price, f"Prominent page text ${price}", "text", "prominent-text", 0.55, priority_text)
+    for price_index, price in enumerate(prices_from_text(priority_text)):
+        add_candidate(
+            candidates,
+            seen,
+            price,
+            f"Prominent page text ${price}",
+            "text",
+            f"text:prominent:{price_index}",
+            "prominent-text",
+            0.55,
+            priority_text,
+        )
 
     if len(candidates) >= 8:
         return
 
     body_text = soup.get_text(" ", strip=True)
-    for price in prices_from_text(body_text)[:12]:
-        add_candidate(candidates, seen, price, f"Page text ${price}", "text", "body-text", 0.3, body_text[:500])
+    for price_index, price in enumerate(prices_from_text(body_text)[:12]):
+        add_candidate(
+            candidates,
+            seen,
+            price,
+            f"Page text ${price}",
+            "text",
+            f"text:body:{price_index}",
+            "body-text",
+            0.3,
+            body_text[:500],
+        )
 
 
 def extract_price_candidates(target: str) -> tuple[list[PriceCandidate], str | None]:
@@ -272,12 +308,19 @@ def extract_price_candidates(target: str) -> tuple[list[PriceCandidate], str | N
 
 def fetch_selected_price(
     target: str,
+    key: str | None = None,
     strategy: str | None = None,
     selector: str | None = None,
 ) -> tuple[float | None, str | None, list[PriceCandidate]]:
     candidates, error = extract_price_candidates(target)
     if error and not candidates:
         return None, error, candidates
+
+    if key:
+        for candidate in candidates:
+            if candidate.key == key:
+                return candidate.price, None, candidates
+        return None, "Selected extraction source was not found on the latest page", candidates
 
     if strategy:
         for candidate in candidates:

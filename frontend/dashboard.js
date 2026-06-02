@@ -152,7 +152,7 @@ async function selectWatch(watchId) {
     <span>目标价 $${watch.target_price}</span>
     <span>${watch.check_interval_minutes || 60} 分钟检索一次</span>
     <span>下次检索 ${formatTime(watch.next_check_at)}</span>
-    <span>来源 ${watch.extraction_strategy || "自动选择"}</span>
+    <span>来源 ${watch.extraction_key || watch.extraction_strategy || "自动选择"}</span>
     <span>${watch.target}</span>
   `;
   renderWatches();
@@ -232,6 +232,7 @@ previewPriceButton.addEventListener("click", async () => {
         <strong>$${candidate.price}</strong>
         <b>${Math.round((candidate.confidence || 0) * 100)}% confidence</b>
         <em>${candidate.strategy}${candidate.selector ? ` · ${candidate.selector}` : ""}</em>
+        <em>刷新来源 ${candidate.key || "auto"}</em>
         <small>${candidate.snippet || candidate.label}</small>
       </span>
     `;
@@ -257,6 +258,7 @@ newWatchForm.addEventListener("submit", async (event) => {
     target_price: Number(document.querySelector("#watch-price").value),
     direction: document.querySelector("#watch-direction").value,
     check_interval_minutes: Number(document.querySelector("#watch-interval").value),
+    extraction_key: selectedPriceCandidate?.key || null,
     extraction_strategy: selectedPriceCandidate?.strategy || null,
     extraction_selector: selectedPriceCandidate?.selector || null,
     extraction_label: selectedPriceCandidate?.label || null,
@@ -271,6 +273,7 @@ newWatchForm.addEventListener("submit", async (event) => {
       owner_phone: phone,
       contact: phone,
       current_price: selectedPriceCandidate ? Number(selectedPriceCandidate.price) : null,
+      extraction_key: payload.extraction_key,
       extraction_strategy: payload.extraction_strategy,
       extraction_selector: payload.extraction_selector,
       extraction_label: payload.extraction_label,
@@ -825,6 +828,7 @@ function getLocalPriceCandidates(target) {
         price: symbol === "NVDA" ? 226.06 : 143.2,
         label: `${symbol} market price`,
         strategy: "stock_api",
+        key: `stock_api:${symbol}`,
         selector: symbol,
         confidence: 0.98,
         snippet: `Demo market quote for ${symbol}`,
@@ -837,6 +841,7 @@ function getLocalPriceCandidates(target) {
       price: 89.99,
       label: "Structured product price",
       strategy: "json_ld",
+      key: "json_ld:0:0",
       selector: "script[type='application/ld+json']",
       confidence: 0.92,
       snippet: "Product schema price",
@@ -845,6 +850,7 @@ function getLocalPriceCandidates(target) {
       price: 99.99,
       label: "Visible sale price",
       strategy: "selector",
+      key: "selector:[class*='price' i]:0:0",
       selector: "[class*='price' i]",
       confidence: 0.72,
       snippet: "Sale price $99.99",

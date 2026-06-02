@@ -72,6 +72,7 @@ class WatchCreate(BaseModel):
     direction: Literal["below", "above", "change"]
     check_interval_minutes: int = Field(default=60, ge=5, le=10080)
     contact: str | None = None
+    extraction_key: str | None = None
     extraction_strategy: str | None = None
     extraction_selector: str | None = None
     extraction_label: str | None = None
@@ -506,10 +507,11 @@ def fetch_stock_price(symbol: str) -> tuple[float | None, str | None]:
 
 def fetch_latest_price(
     target: str,
+    key: str | None = None,
     strategy: str | None = None,
     selector: str | None = None,
 ) -> tuple[float | None, str | None, list[dict[str, str | float | None]]]:
-    price, error, candidates = fetch_selected_price(target, strategy=strategy, selector=selector)
+    price, error, candidates = fetch_selected_price(target, key=key, strategy=strategy, selector=selector)
     return price, error, [candidate.__dict__ for candidate in candidates]
 
 
@@ -568,6 +570,7 @@ def refresh_watch_price(watch: WatchItem) -> WatchItem:
     watch.status = "checking"
     price, error, candidates = fetch_latest_price(
         watch.target,
+        key=watch.extraction_key,
         strategy=watch.extraction_strategy,
         selector=watch.extraction_selector,
     )
@@ -828,6 +831,7 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
 
     fetched_price, fetch_error, candidates = fetch_latest_price(
         payload.target,
+        key=payload.extraction_key,
         strategy=payload.extraction_strategy,
         selector=payload.extraction_selector,
     )
