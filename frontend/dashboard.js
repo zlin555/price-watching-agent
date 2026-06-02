@@ -415,3 +415,305 @@ async function loadProfile() {
     usingLocalDemo = true;
   }
 }
+
+const detailIntervalInput = document.querySelector("#detail-interval");
+const priceIntervalForm = document.querySelector("#price-interval-form");
+const storeWatchForm = document.querySelector("#store-watch-form");
+const storeWatchList = document.querySelector("#store-watch-list");
+const storeMessage = document.querySelector("#store-message");
+const storeDetailTitle = document.querySelector("#store-detail-title");
+const storeDetailStatus = document.querySelector("#store-detail-status");
+const storeDetailMeta = document.querySelector("#store-detail-meta");
+const storeDetailIntervalInput = document.querySelector("#store-detail-interval");
+const storeIntervalForm = document.querySelector("#store-interval-form");
+const refreshStoreButton = document.querySelector("#refresh-store-watch");
+const productList = document.querySelector("#product-list");
+
+let storeWatches = [];
+let selectedStoreWatchId = null;
+
+document.addEventListener("click", () => {
+  const selected = watches.find((watch) => watch.id === selectedWatchId);
+  if (selected && detailIntervalInput) {
+    detailIntervalInput.value = selected.check_interval_minutes || 60;
+  }
+});
+
+priceIntervalForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!selectedWatchId) {
+    return;
+  }
+  const minutes = Number(detailIntervalInput.value);
+  if (usingLocalDemo) {
+    const updated = getLocalWatches().map((watch) =>
+      watch.id === selectedWatchId
+        ? {
+            ...watch,
+            check_interval_minutes: minutes,
+            next_check_at: new Date(Date.now() + minutes * 60 * 1000).toISOString(),
+          }
+        : watch
+    );
+    localStorage.setItem("pricepilot_watches", JSON.stringify(updated));
+    await loadWatches();
+    return;
+  }
+  await fetch(apiUrl(`/watches/${selectedWatchId}/interval`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ check_interval_minutes: minutes }),
+  });
+  await loadWatches();
+});
+
+async function loadStoreWatches() {
+  if (usingLocalDemo) {
+    storeWatches = getLocalStoreWatches();
+    renderStoreWatches();
+    if (storeWatches.length > 0) {
+      selectStoreWatch(selectedStoreWatchId || storeWatches[0].id);
+    }
+    return;
+  }
+
+  const response = await fetch(apiUrl("/store-watches"));
+  storeWatches = await response.json();
+  renderStoreWatches();
+  if (storeWatches.length > 0) {
+    selectStoreWatch(selectedStoreWatchId || storeWatches[0].id);
+  }
+}
+
+function renderStoreWatches() {
+  storeWatchList.innerHTML = "";
+  storeWatches.forEach((watch) => {
+    const item = document.createElement("li");
+    item.className = watch.id === selectedStoreWatchId ? "active" : "";
+
+    const infoButton = document.createElement("button");
+    infoButton.className = "watch-select";
+    infoButton.type = "button";
+    infoButton.innerHTML = `
+      <strong>${watch.title}</strong>
+      <span>${watch.store_url}</span>
+      <span>${watch.check_interval_minutes} 分钟扫描一次 · ${watch.status}</span>
+    `;
+    infoButton.addEventListener("click", () => selectStoreWatch(watch.id));
+
+    const score = document.createElement("b");
+    score.textContent = `${watch.min_score}+`;
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "delete-button";
+    deleteButton.type = "button";
+    deleteButton.textContent = "删除";
+    deleteButton.addEventListener("click", () => deleteStoreWatch(watch.id));
+
+    item.append(infoButton, score, deleteButton);
+    storeWatchList.appendChild(item);
+  });
+}
+
+async function selectStoreWatch(watchId) {
+  selectedStoreWatchId = watchId;
+  const watch = storeWatches.find((item) => item.id === watchId);
+  if (!watch) {
+    return;
+  }
+
+  let products = getLocalProducts(watch);
+  if (!usingLocalDemo) {
+    const response = await fetch(apiUrl(`/store-watches/${watchId}/products`));
+    products = await response.json();
+  }
+
+  storeDetailTitle.textContent = watch.title;
+  storeDetailStatus.textContent = `${watch.min_score}+ 分触发提醒`;
+  storeDetailStatus.classList.add("success");
+  storeDetailIntervalInput.value = watch.check_interval_minutes;
+  storeDetailMeta.innerHTML = `
+    <span>关键词 ${watch.keywords || "用户画像"}</span>
+    <span>下次扫描 ${formatTime(watch.next_check_at)}</span>
+    <span>${watch.store_url}</span>
+  `;
+  productList.innerHTML = products
+    .map(
+      (product) => `
+        <li class="${product.matched ? "matched" : ""}">
+          <div class="product-thumb">${product.image_url ? `<img src="${product.image_url}" alt="">` : "No image"}</div>
+          <strong>${product.title}</strong>
+          <span>${product.price ? `$${product.price}` : "价格待识别"}</span>
+          <b>${product.score}/100</b>
+          <a href="${product.url}" target="_blank" rel="noreferrer">打开商品</a>
+        </li>
+      `
+    )
+    .join("");
+  renderStoreWatches();
+}
+
+async function deleteStoreWatch(watchId) {
+  if (usingLocalDemo) {
+    localStorage.setItem(
+      "pricepilot_store_watches",
+      JSON.stringify(getLocalStoreWatches().filter((watch) => watch.id !== watchId))
+    );
+    selectedStoreWatchId = null;
+    await loadStoreWatches();
+    return;
+  }
+  await fetch(apiUrl(`/store-watches/${watchId}`), { method: "DELETE" });
+  selectedStoreWatchId = null;
+  await loadStoreWatches();
+}
+
+storeWatchForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  storeMessage.textContent = "正在创建并扫描...";
+  const payload = {
+    title: document.querySelector("#store-title").value.trim(),
+    store_url: document.querySelector("#store-url").value.trim(),
+    keywords: document.querySelector("#store-keywords").value.trim(),
+    min_score: Number(document.querySelector("#store-score").value),
+    check_interval_minutes: Number(document.querySelector("#store-interval").value),
+  };
+
+  if (usingLocalDemo) {
+    const watches = getLocalStoreWatches();
+    const watch = {
+      ...payload,
+      id: Date.now(),
+      owner_phone: phone,
+      created_at: new Date().toISOString(),
+      last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + payload.check_interval_minutes * 60 * 1000).toISOString(),
+      status: "ok",
+      last_error: null,
+    };
+    watches.push(watch);
+    localStorage.setItem("pricepilot_store_watches", JSON.stringify(watches));
+    selectedStoreWatchId = watch.id;
+    storeMessage.textContent = "已创建商品发现任务";
+    await loadStoreWatches();
+    return;
+  }
+
+  const response = await fetch(apiUrl("/store-watches"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const watch = await response.json();
+  selectedStoreWatchId = watch.id;
+  storeMessage.textContent = "已创建商品发现任务";
+  await loadStoreWatches();
+});
+
+storeIntervalForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!selectedStoreWatchId) {
+    return;
+  }
+  const minutes = Number(storeDetailIntervalInput.value);
+  if (usingLocalDemo) {
+    const updated = getLocalStoreWatches().map((watch) =>
+      watch.id === selectedStoreWatchId
+        ? {
+            ...watch,
+            check_interval_minutes: minutes,
+            next_check_at: new Date(Date.now() + minutes * 60 * 1000).toISOString(),
+          }
+        : watch
+    );
+    localStorage.setItem("pricepilot_store_watches", JSON.stringify(updated));
+    await loadStoreWatches();
+    return;
+  }
+  await fetch(apiUrl(`/store-watches/${selectedStoreWatchId}/interval`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ check_interval_minutes: minutes }),
+  });
+  await loadStoreWatches();
+});
+
+refreshStoreButton.addEventListener("click", async () => {
+  if (!selectedStoreWatchId) {
+    return;
+  }
+  refreshStoreButton.textContent = "扫描中...";
+  if (!usingLocalDemo) {
+    await fetch(apiUrl(`/store-watches/${selectedStoreWatchId}/refresh`), { method: "POST" });
+  }
+  await loadStoreWatches();
+  refreshStoreButton.textContent = "立即扫描店铺";
+});
+
+function getLocalStoreWatches() {
+  const saved = localStorage.getItem("pricepilot_store_watches");
+  if (saved) {
+    return JSON.parse(saved);
+  }
+  const seed = [
+    {
+      id: 1,
+      owner_phone: phone,
+      title: "Tech accessories discovery",
+      store_url: "https://example.com/store",
+      keywords: "laptop sleeve keyboard usb-c charger",
+      min_score: 80,
+      check_interval_minutes: 360,
+      created_at: new Date().toISOString(),
+      last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + 360 * 60 * 1000).toISOString(),
+      status: "ok",
+      last_error: null,
+    },
+  ];
+  localStorage.setItem("pricepilot_store_watches", JSON.stringify(seed));
+  return seed;
+}
+
+function getLocalProducts(watch) {
+  return [
+    {
+      id: 1,
+      store_watch_id: watch.id,
+      title: "USB-C travel charger with compact cable kit",
+      url: "https://example.com/product/charger",
+      image_url: "",
+      price: 39,
+      score: 88.5,
+      matched: true,
+      discovered_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      store_watch_id: watch.id,
+      title: "Minimal laptop sleeve for 13 inch notebooks",
+      url: "https://example.com/product/sleeve",
+      image_url: "",
+      price: 28,
+      score: 83.2,
+      matched: true,
+      discovered_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      store_watch_id: watch.id,
+      title: "Desk organizer tray",
+      url: "https://example.com/product/tray",
+      image_url: "",
+      price: 18,
+      score: 41.9,
+      matched: false,
+      discovered_at: new Date().toISOString(),
+    },
+  ];
+}
+
+loadStoreWatches().catch(() => {
+  usingLocalDemo = true;
+  loadStoreWatches();
+});

@@ -1,8 +1,10 @@
-from datetime import datetime, timedelta, timezone
 import asyncio
+from datetime import datetime, timedelta, timezone
 import hashlib
+import math
 import re
 import secrets
+from urllib.parse import urljoin
 from typing import Literal
 
 from fastapi import FastAPI
@@ -83,10 +85,57 @@ class PricePoint(BaseModel):
     price: float
 
 
+class WatchIntervalUpdate(BaseModel):
+    check_interval_minutes: int = Field(..., ge=5, le=10080)
+
+
+class StoreWatchCreate(BaseModel):
+    store_url: str
+    title: str = "Store discovery watch"
+    keywords: str = Field(default="", description="Comma or space separated interests")
+    min_score: float = Field(default=80, ge=0, le=100)
+    check_interval_minutes: int = Field(default=360, ge=15, le=10080)
+
+
+class StoreWatchItem(StoreWatchCreate):
+    id: int
+    owner_phone: str
+    created_at: datetime
+    last_checked_at: datetime | None = None
+    next_check_at: datetime | None = None
+    status: Literal["idle", "due", "checking", "ok", "failed"] = "idle"
+    last_error: str | None = None
+
+
+class DiscoveredProduct(BaseModel):
+    id: int
+    store_watch_id: int
+    title: str
+    url: str
+    image_url: str | None = None
+    price: float | None = None
+    score: float
+    matched: bool
+    discovered_at: datetime
+
+
+class NotificationEvent(BaseModel):
+    id: int
+    owner_phone: str
+    kind: Literal["price", "product_match"]
+    title: str
+    message: str
+    created_at: datetime
+    read: bool = False
+
+
 users: dict[str, dict[str, str | datetime]] = {}
 sessions: dict[str, str] = {}
 demo_watches: list[WatchItem] = []
 price_history: dict[int, list[PricePoint]] = {}
+store_watches: list[StoreWatchItem] = []
+discovered_products: list[DiscoveredProduct] = []
+notification_events: list[NotificationEvent] = []
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
@@ -192,6 +241,21 @@ def seed_demo_data() -> None:
         PricePoint(checked_at=now, price=139.8),
         PricePoint(checked_at=now, price=143.2),
     ]
+    store_watches.append(
+        StoreWatchItem(
+            id=1,
+            owner_phone="+1 217 000 0000",
+            title="Tech accessories discovery",
+            store_url="https://example.com/store",
+            keywords="laptop sleeve keyboard usb-c charger",
+            min_score=80,
+            check_interval_minutes=360,
+            created_at=now,
+            last_checked_at=now,
+            next_check_at=now + timedelta(minutes=360),
+            status="idle",
+        )
+    )
 
 
 seed_demo_data()
@@ -224,6 +288,40 @@ def extract_price_from_text(text: str) -> float | None:
     if not candidates:
         return None
     return min(price for price in candidates if price > 0)
+
+
+def tokenize(text: str) -> list[str]:
+    return re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]+", text.lower())
+
+
+def text_embedding(text: str, dimensions: int = 64) -> list[float]:
+    vector = [0.0] * dimensions
+    for token in tokenize(text):
+        digest = hashlib.sha256(token.encode()).digest()
+        index = int.from_bytes(digest[:2], "big") % dimensions
+        sign = 1 if digest[2] % 2 == 0 else -1
+        vector[index] += sign
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right:
+        return 0.0
+    return sum(a * b for a, b in zip(left, right))
+
+
+def build_user_profile_text(owner_phone: str) -> str:
+    watch_text = " ".join(
+        f"{watch.title} {watch.target}" for watch in demo_watches if watch.owner_phone == owner_phone
+    )
+    store_text = " ".join(
+        f"{watch.title} {watch.keywords}" for watch in store_watches if watch.owner_phone == owner_phone
+    )
+    liked_products = " ".join(
+        product.title for product in discovered_products if product.matched
+    )
+    return f"{watch_text} {store_text} {liked_products}".strip()
 
 
 def fetch_latest_price(target: str) -> tuple[float | None, str | None]:
@@ -269,6 +367,57 @@ def fetch_latest_price(target: str) -> tuple[float | None, str | None]:
     return None, "No price-like value found on page"
 
 
+def scrape_store_products(store_url: str) -> tuple[list[dict[str, str | float | None]], str | None]:
+    if not store_url.startswith(("http://", "https://")):
+        return [], "Store watch requires a URL"
+
+    try:
+        response = requests.get(
+            store_url,
+            timeout=15,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
+                )
+            },
+        )
+        response.raise_for_status()
+    except requests.RequestException as error:
+        return [], str(error)
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    candidates = soup.select(
+        "[class*='product' i], [data-testid*='product' i], [class*='item' i], article, li"
+    )
+    products: list[dict[str, str | float | None]] = []
+    seen_urls: set[str] = set()
+
+    for element in candidates[:120]:
+        title_node = element.select_one("h1, h2, h3, h4, [class*='title' i], [class*='name' i], a")
+        link_node = element.select_one("a[href]")
+        image_node = element.select_one("img")
+        title = title_node.get_text(" ", strip=True) if title_node else element.get_text(" ", strip=True)[:90]
+        href = link_node.get("href") if link_node else store_url
+        product_url = urljoin(store_url, href)
+        if not title or len(title) < 3 or product_url in seen_urls:
+            continue
+        seen_urls.add(product_url)
+        image_src = image_node.get("src") or image_node.get("data-src") if image_node else None
+        products.append(
+            {
+                "title": title[:180],
+                "url": product_url,
+                "image_url": urljoin(store_url, image_src) if image_src else None,
+                "price": extract_price_from_text(element.get_text(" ", strip=True)),
+            }
+        )
+
+    if not products:
+        return [], "No product-like items found on store page"
+    return products[:40], None
+
+
 def refresh_watch_price(watch: WatchItem) -> WatchItem:
     watch.status = "checking"
     price, error = fetch_latest_price(watch.target)
@@ -299,9 +448,72 @@ def run_due_checks(owner_phone: str | None = None) -> list[WatchItem]:
     return refreshed
 
 
+def refresh_store_watch(watch: StoreWatchItem) -> StoreWatchItem:
+    watch.status = "checking"
+    products, error = scrape_store_products(watch.store_url)
+    now = datetime.now(timezone.utc)
+    if error:
+        watch.status = "failed"
+        watch.last_error = error
+    else:
+        profile_embedding = text_embedding(f"{watch.keywords} {build_user_profile_text(watch.owner_phone)}")
+        known_urls = {
+            product.url for product in discovered_products if product.store_watch_id == watch.id
+        }
+        for product in products:
+            if str(product["url"]) in known_urls:
+                continue
+            product_embedding = text_embedding(
+                f"{product['title']} {product.get('url') or ''} {product.get('image_url') or ''}"
+            )
+            score = round(max(cosine_similarity(profile_embedding, product_embedding), 0) * 100, 1)
+            matched = score >= watch.min_score
+            discovered = DiscoveredProduct(
+                id=len(discovered_products) + 1,
+                store_watch_id=watch.id,
+                title=str(product["title"]),
+                url=str(product["url"]),
+                image_url=product.get("image_url"),
+                price=product.get("price"),
+                score=score,
+                matched=matched,
+                discovered_at=now,
+            )
+            discovered_products.append(discovered)
+            if matched:
+                notification_events.append(
+                    NotificationEvent(
+                        id=len(notification_events) + 1,
+                        owner_phone=watch.owner_phone,
+                        kind="product_match",
+                        title=f"New product match: {discovered.title}",
+                        message=f"{discovered.title} scored {discovered.score}/100 for {watch.title}",
+                        created_at=now,
+                    )
+                )
+        watch.status = "ok"
+        watch.last_error = None
+
+    watch.last_checked_at = now
+    watch.next_check_at = now + timedelta(minutes=watch.check_interval_minutes)
+    return watch
+
+
+def run_due_store_checks(owner_phone: str | None = None) -> list[StoreWatchItem]:
+    now = datetime.now(timezone.utc)
+    refreshed: list[StoreWatchItem] = []
+    for watch in store_watches:
+        if owner_phone and watch.owner_phone != owner_phone:
+            continue
+        if watch.next_check_at and watch.next_check_at <= now:
+            refreshed.append(refresh_store_watch(watch))
+    return refreshed
+
+
 async def background_price_checker() -> None:
     while True:
         run_due_checks()
+        run_due_store_checks()
         await asyncio.sleep(60)
 
 
@@ -426,6 +638,21 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
     return watch
 
 
+@app.patch("/watches/{watch_id}/interval")
+def update_watch_interval(
+    watch_id: int, payload: WatchIntervalUpdate, token: str | None = None
+) -> WatchItem | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    watch = next((item for item in demo_watches if item.id == watch_id and item.owner_phone == phone), None)
+    if not watch:
+        return JSONResponse(status_code=404, content={"detail": "Watch not found"})
+    watch.check_interval_minutes = payload.check_interval_minutes
+    watch.next_check_at = datetime.now(timezone.utc) + timedelta(minutes=payload.check_interval_minutes)
+    return watch
+
+
 @app.post("/watches/{watch_id}/refresh")
 def refresh_watch(watch_id: int, token: str | None = None) -> WatchItem | JSONResponse:
     phone = find_user_from_token(token)
@@ -444,7 +671,91 @@ def run_due_check_job(token: str | None = None) -> dict[str, int] | JSONResponse
     if not phone:
         return auth_error()
     refreshed = run_due_checks(phone)
-    return {"refreshed": len(refreshed)}
+    store_refreshed = run_due_store_checks(phone)
+    return {"refreshed": len(refreshed), "store_refreshed": len(store_refreshed)}
+
+
+@app.get("/store-watches")
+def list_store_watches(token: str | None = None) -> list[StoreWatchItem] | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    run_due_store_checks(phone)
+    return [watch for watch in store_watches if watch.owner_phone == phone]
+
+
+@app.post("/store-watches")
+def create_store_watch(payload: StoreWatchCreate, token: str | None = None) -> StoreWatchItem | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    now = datetime.now(timezone.utc)
+    watch = StoreWatchItem(
+        id=len(store_watches) + 1,
+        owner_phone=phone,
+        created_at=now,
+        next_check_at=now + timedelta(minutes=payload.check_interval_minutes),
+        **payload.model_dump(),
+    )
+    store_watches.append(watch)
+    return refresh_store_watch(watch)
+
+
+@app.post("/store-watches/{watch_id}/refresh")
+def refresh_store_watch_endpoint(watch_id: int, token: str | None = None) -> StoreWatchItem | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    watch = next((item for item in store_watches if item.id == watch_id and item.owner_phone == phone), None)
+    if not watch:
+        return JSONResponse(status_code=404, content={"detail": "Store watch not found"})
+    return refresh_store_watch(watch)
+
+
+@app.patch("/store-watches/{watch_id}/interval")
+def update_store_watch_interval(
+    watch_id: int, payload: WatchIntervalUpdate, token: str | None = None
+) -> StoreWatchItem | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    watch = next((item for item in store_watches if item.id == watch_id and item.owner_phone == phone), None)
+    if not watch:
+        return JSONResponse(status_code=404, content={"detail": "Store watch not found"})
+    watch.check_interval_minutes = payload.check_interval_minutes
+    watch.next_check_at = datetime.now(timezone.utc) + timedelta(minutes=payload.check_interval_minutes)
+    return watch
+
+
+@app.delete("/store-watches/{watch_id}")
+def delete_store_watch(watch_id: int, token: str | None = None) -> dict[str, int] | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    for index, watch in enumerate(store_watches):
+        if watch.id == watch_id and watch.owner_phone == phone:
+            store_watches.pop(index)
+            return {"deleted": watch_id}
+    return JSONResponse(status_code=404, content={"detail": "Store watch not found"})
+
+
+@app.get("/store-watches/{watch_id}/products")
+def list_discovered_products(watch_id: int, token: str | None = None) -> list[DiscoveredProduct] | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    watch = next((item for item in store_watches if item.id == watch_id and item.owner_phone == phone), None)
+    if not watch:
+        return JSONResponse(status_code=404, content={"detail": "Store watch not found"})
+    return [product for product in discovered_products if product.store_watch_id == watch_id]
+
+
+@app.get("/notifications")
+def list_notifications(token: str | None = None) -> list[NotificationEvent] | JSONResponse:
+    phone = find_user_from_token(token)
+    if not phone:
+        return auth_error()
+    return [event for event in notification_events if event.owner_phone == phone]
 
 
 @app.get("/watches/{watch_id}/history")

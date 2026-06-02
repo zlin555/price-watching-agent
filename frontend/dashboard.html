@@ -15,6 +15,7 @@
       <nav class="side-nav" aria-label="内部导航">
         <button class="side-link active" type="button" data-view="board">价格看板</button>
         <button class="side-link" type="button" data-view="new-watch">新增追踪</button>
+        <button class="side-link" type="button" data-view="store-discovery">商品发现</button>
       </nav>
       <button class="ghost-button logout-button" type="button">退出登录</button>
     </aside>
@@ -93,6 +94,13 @@
           </div>
           <div class="chart large-chart" id="detail-chart" aria-label="详细价格趋势图"></div>
           <div class="trend-meta" id="detail-meta"></div>
+          <form class="inline-settings" id="price-interval-form">
+            <label>
+              <span>修改检索间隔</span>
+              <input id="detail-interval" type="number" min="5" max="10080" step="5" />
+            </label>
+            <button class="secondary-link" type="submit">保存间隔</button>
+          </form>
           <button class="secondary-link refresh-button" id="refresh-watch" type="button">立即检索</button>
         </section>
       </section>
@@ -140,6 +148,78 @@
           <button class="submit-button" type="submit">添加追踪任务</button>
           <p class="form-message" id="watch-message"></p>
         </form>
+      </section>
+
+      <section class="store-layout hidden" data-view-panel="store-discovery">
+        <section class="panel add-watch-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">商品发现</p>
+              <h2>跟踪店铺新上架商品</h2>
+            </div>
+          </div>
+          <form class="watch-form compact-form" id="store-watch-form">
+            <label>
+              <span>任务名称</span>
+              <input id="store-title" type="text" value="新品发现任务" />
+            </label>
+            <label>
+              <span>店铺链接</span>
+              <input id="store-url" type="url" value="https://example.com/store" />
+            </label>
+            <label>
+              <span>关键词 / 用户偏好</span>
+              <input id="store-keywords" type="text" value="laptop sleeve keyboard usb-c charger" />
+            </label>
+            <div class="form-grid">
+              <label>
+                <span>匹配阈值</span>
+                <input id="store-score" type="number" min="0" max="100" value="80" />
+              </label>
+              <label>
+                <span>检索间隔</span>
+                <select id="store-interval">
+                  <option value="60">每 1 小时</option>
+                  <option value="360" selected>每 6 小时</option>
+                  <option value="720">每 12 小时</option>
+                  <option value="1440">每天</option>
+                </select>
+              </label>
+            </div>
+            <button class="submit-button" type="submit">创建商品发现任务</button>
+            <p class="form-message" id="store-message"></p>
+          </form>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">店铺任务</p>
+              <h2>选择一个店铺追踪</h2>
+            </div>
+          </div>
+          <ul class="watch-list interactive-list" id="store-watch-list"></ul>
+        </section>
+
+        <section class="panel discovery-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">新商品匹配</p>
+              <h2 id="store-detail-title">请选择店铺任务</h2>
+            </div>
+            <span class="status-pill" id="store-detail-status">等待选择</span>
+          </div>
+          <div class="trend-meta" id="store-detail-meta"></div>
+          <form class="inline-settings" id="store-interval-form">
+            <label>
+              <span>修改检索间隔</span>
+              <input id="store-detail-interval" type="number" min="15" max="10080" step="15" />
+            </label>
+            <button class="secondary-link" type="submit">保存间隔</button>
+          </form>
+          <button class="secondary-link refresh-button" id="refresh-store-watch" type="button">立即扫描店铺</button>
+          <ul class="product-grid" id="product-list"></ul>
+        </section>
       </section>
     </main>
 
