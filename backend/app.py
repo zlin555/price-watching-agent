@@ -510,8 +510,17 @@ def fetch_latest_price(
     key: str | None = None,
     strategy: str | None = None,
     selector: str | None = None,
+    label: str | None = None,
+    previous_price: float | None = None,
 ) -> tuple[float | None, str | None, list[dict[str, str | float | None]]]:
-    price, error, candidates = fetch_selected_price(target, key=key, strategy=strategy, selector=selector)
+    price, error, candidates = fetch_selected_price(
+        target,
+        key=key,
+        strategy=strategy,
+        selector=selector,
+        label=label,
+        previous_price=previous_price,
+    )
     return price, error, [candidate.__dict__ for candidate in candidates]
 
 
@@ -573,6 +582,8 @@ def refresh_watch_price(watch: WatchItem) -> WatchItem:
         key=watch.extraction_key,
         strategy=watch.extraction_strategy,
         selector=watch.extraction_selector,
+        label=watch.extraction_label,
+        previous_price=watch.current_price,
     )
     now = datetime.now(timezone.utc)
     watch.last_candidates = candidates
@@ -834,6 +845,7 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
         key=payload.extraction_key,
         strategy=payload.extraction_strategy,
         selector=payload.extraction_selector,
+        label=payload.extraction_label,
     )
     now = datetime.now(timezone.utc)
     watch = WatchItem(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import hashlib
 import re
 from typing import Any
 from urllib.parse import urljoin
@@ -27,6 +28,31 @@ USER_AGENT = (
 )
 
 
+def normalize_source_text(text: str | None) -> str:
+    if not text:
+        return ""
+    normalized = text.lower()
+    normalized = re.sub(r"\$?\s?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,4})?", " ", normalized)
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def stable_source_key(strategy: str, selector: str | None, source_text: str | None, fallback: str) -> str:
+    signature = normalize_source_text(source_text)
+    if not signature:
+        signature = fallback
+    digest = hashlib.sha1(signature.encode()).hexdigest()[:12]
+    return f"{strategy}:{selector or 'none'}:{digest}"
+
+
+def token_overlap(left: str | None, right: str | None) -> float:
+    left_tokens = set(normalize_source_text(left).split())
+    right_tokens = set(normalize_source_text(right).split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
 def extract_stock_symbol(target: str) -> str | None:
     direct_symbol = re.fullmatch(r"[A-Z]{1,6}(?:\.[A-Z])?", target.strip().upper())
     if direct_symbol:
@@ -43,6 +69,35 @@ def extract_stock_symbol(target: str) -> str | None:
     return None
 
 
+def fetch_stooq_stock_candidate(symbol: str) -> PriceCandidate | None:
+    try:
+        response = requests.get(
+            f"https://stooq.com/q/l/?s={symbol.lower()}.us&f=sd2t2ohlcv&h&e=csv",
+            timeout=10,
+            headers={"User-Agent": USER_AGENT},
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    lines = [line.strip() for line in response.text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+    row = dict(zip(lines[0].split(","), lines[1].split(",")))
+    close_price = parse_numeric_price(row.get("Close"))
+    if close_price is None:
+        return None
+    return PriceCandidate(
+        price=close_price,
+        label=f"{symbol} market price ${close_price}",
+        strategy="stock_api",
+        key=f"stock_api:{symbol}",
+        selector=symbol,
+        confidence=0.9,
+        snippet=f"Stooq quote for {symbol}",
+    )
+
+
 def fetch_stock_candidate(symbol: str) -> PriceCandidate | None:
     try:
         response = requests.get(
@@ -53,13 +108,13 @@ def fetch_stock_candidate(symbol: str) -> PriceCandidate | None:
         response.raise_for_status()
         results = response.json().get("quoteResponse", {}).get("result", [])
     except (requests.RequestException, ValueError):
-        return None
+        return fetch_stooq_stock_candidate(symbol)
 
     if not results:
-        return None
+        return fetch_stooq_stock_candidate(symbol)
     raw_price = results[0].get("regularMarketPrice") or results[0].get("postMarketPrice")
     if raw_price is None:
-        return None
+        return fetch_stooq_stock_candidate(symbol)
     price = float(raw_price)
     return PriceCandidate(
         price=price,
@@ -182,8 +237,8 @@ def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate]
                 price,
                 f"Structured product price ${price}",
                 "json_ld",
-                f"json_ld:{index}:{value_index}",
-                f"script[type='application/ld+json']:eq({index})",
+                stable_source_key("json_ld", "script[type='application/ld+json']", raw, f"{index}:{value_index}"),
+                "script[type='application/ld+json']",
                 0.92,
                 raw,
             )
@@ -206,7 +261,7 @@ def extract_meta_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
                 price,
                 f"Meta price ${price}",
                 "meta",
-                f"meta:{selector}:{element_index}",
+                stable_source_key("meta", selector, content, f"{element_index}"),
                 selector,
                 0.86,
                 content,
@@ -237,7 +292,7 @@ def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate
                     price,
                     f"{raw[:80]}",
                     "selector",
-                    f"selector:{selector}:{element_index}:{price_index}",
+                    stable_source_key("selector", selector, context or raw, f"{element_index}:{price_index}"),
                     selector,
                     0.72,
                     context,
@@ -256,7 +311,7 @@ def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
             price,
             f"Prominent page text ${price}",
             "text",
-            f"text:prominent:{price_index}",
+            stable_source_key("text", "prominent-text", priority_text, f"prominent:{price_index}"),
             "prominent-text",
             0.55,
             priority_text,
@@ -273,7 +328,7 @@ def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
             price,
             f"Page text ${price}",
             "text",
-            f"text:body:{price_index}",
+            stable_source_key("text", "body-text", body_text[:500], f"body:{price_index}"),
             "body-text",
             0.3,
             body_text[:500],
@@ -311,6 +366,8 @@ def fetch_selected_price(
     key: str | None = None,
     strategy: str | None = None,
     selector: str | None = None,
+    label: str | None = None,
+    previous_price: float | None = None,
 ) -> tuple[float | None, str | None, list[PriceCandidate]]:
     candidates, error = extract_price_candidates(target)
     if error and not candidates:
@@ -320,6 +377,25 @@ def fetch_selected_price(
         for candidate in candidates:
             if candidate.key == key:
                 return candidate.price, None, candidates
+
+        compatible_candidates = [
+            candidate
+            for candidate in candidates
+            if (not strategy or candidate.strategy == strategy)
+            and (selector is None or candidate.selector == selector)
+        ]
+        if compatible_candidates:
+            ranked_candidates = sorted(
+                compatible_candidates,
+                key=lambda candidate: (
+                    token_overlap(candidate.label, label) + token_overlap(candidate.snippet, label),
+                    -abs(candidate.price - previous_price) if previous_price is not None else 0,
+                    candidate.confidence,
+                ),
+                reverse=True,
+            )
+            return ranked_candidates[0].price, None, candidates
+
         return None, "Selected extraction source was not found on the latest page", candidates
 
     if strategy:
