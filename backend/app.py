@@ -587,7 +587,7 @@ def update_profile(payload: UserSettingsUpdate, token: str | None = None) -> Use
     return user_profile_from_record(user)
 
 
-@app.patch("/profile/password")
+@app.patch("/profile/password", response_model=None)
 def update_password(payload: PasswordUpdate, token: str | None = None) -> dict[str, str] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -602,7 +602,7 @@ def update_password(payload: PasswordUpdate, token: str | None = None) -> dict[s
     return {"status": "password updated"}
 
 
-@app.get("/watches")
+@app.get("/watches", response_model=None)
 def list_watches(token: str | None = None) -> list[WatchItem] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -611,7 +611,7 @@ def list_watches(token: str | None = None) -> list[WatchItem] | JSONResponse:
     return [watch for watch in demo_watches if watch.owner_phone == phone]
 
 
-@app.post("/watches")
+@app.post("/watches", response_model=None)
 def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -638,7 +638,7 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
     return watch
 
 
-@app.patch("/watches/{watch_id}/interval")
+@app.patch("/watches/{watch_id}/interval", response_model=None)
 def update_watch_interval(
     watch_id: int, payload: WatchIntervalUpdate, token: str | None = None
 ) -> WatchItem | JSONResponse:
@@ -653,7 +653,7 @@ def update_watch_interval(
     return watch
 
 
-@app.post("/watches/{watch_id}/refresh")
+@app.post("/watches/{watch_id}/refresh", response_model=None)
 def refresh_watch(watch_id: int, token: str | None = None) -> WatchItem | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -665,7 +665,7 @@ def refresh_watch(watch_id: int, token: str | None = None) -> WatchItem | JSONRe
     return refresh_watch_price(watch)
 
 
-@app.post("/jobs/run-due-checks")
+@app.post("/jobs/run-due-checks", response_model=None)
 def run_due_check_job(token: str | None = None) -> dict[str, int] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -675,7 +675,7 @@ def run_due_check_job(token: str | None = None) -> dict[str, int] | JSONResponse
     return {"refreshed": len(refreshed), "store_refreshed": len(store_refreshed)}
 
 
-@app.get("/store-watches")
+@app.get("/store-watches", response_model=None)
 def list_store_watches(token: str | None = None) -> list[StoreWatchItem] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -684,7 +684,7 @@ def list_store_watches(token: str | None = None) -> list[StoreWatchItem] | JSONR
     return [watch for watch in store_watches if watch.owner_phone == phone]
 
 
-@app.post("/store-watches")
+@app.post("/store-watches", response_model=None)
 def create_store_watch(payload: StoreWatchCreate, token: str | None = None) -> StoreWatchItem | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -701,7 +701,7 @@ def create_store_watch(payload: StoreWatchCreate, token: str | None = None) -> S
     return refresh_store_watch(watch)
 
 
-@app.post("/store-watches/{watch_id}/refresh")
+@app.post("/store-watches/{watch_id}/refresh", response_model=None)
 def refresh_store_watch_endpoint(watch_id: int, token: str | None = None) -> StoreWatchItem | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -712,7 +712,7 @@ def refresh_store_watch_endpoint(watch_id: int, token: str | None = None) -> Sto
     return refresh_store_watch(watch)
 
 
-@app.patch("/store-watches/{watch_id}/interval")
+@app.patch("/store-watches/{watch_id}/interval", response_model=None)
 def update_store_watch_interval(
     watch_id: int, payload: WatchIntervalUpdate, token: str | None = None
 ) -> StoreWatchItem | JSONResponse:
@@ -727,7 +727,7 @@ def update_store_watch_interval(
     return watch
 
 
-@app.delete("/store-watches/{watch_id}")
+@app.delete("/store-watches/{watch_id}", response_model=None)
 def delete_store_watch(watch_id: int, token: str | None = None) -> dict[str, int] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -739,7 +739,7 @@ def delete_store_watch(watch_id: int, token: str | None = None) -> dict[str, int
     return JSONResponse(status_code=404, content={"detail": "Store watch not found"})
 
 
-@app.get("/store-watches/{watch_id}/products")
+@app.get("/store-watches/{watch_id}/products", response_model=None)
 def list_discovered_products(watch_id: int, token: str | None = None) -> list[DiscoveredProduct] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -750,7 +750,7 @@ def list_discovered_products(watch_id: int, token: str | None = None) -> list[Di
     return [product for product in discovered_products if product.store_watch_id == watch_id]
 
 
-@app.get("/notifications")
+@app.get("/notifications", response_model=None)
 def list_notifications(token: str | None = None) -> list[NotificationEvent] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -758,7 +758,7 @@ def list_notifications(token: str | None = None) -> list[NotificationEvent] | JS
     return [event for event in notification_events if event.owner_phone == phone]
 
 
-@app.get("/watches/{watch_id}/history")
+@app.get("/watches/{watch_id}/history", response_model=None)
 def watch_history(watch_id: int, token: str | None = None) -> list[PricePoint] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
@@ -770,7 +770,7 @@ def watch_history(watch_id: int, token: str | None = None) -> list[PricePoint] |
     return price_history.get(watch_id, [])
 
 
-@app.delete("/watches/{watch_id}")
+@app.delete("/watches/{watch_id}", response_model=None)
 def delete_watch(watch_id: int, token: str | None = None) -> dict[str, int] | JSONResponse:
     phone = find_user_from_token(token)
     if not phone:
