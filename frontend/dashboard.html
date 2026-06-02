@@ -41,14 +41,20 @@
               </div>
             </div>
 
-            <form class="panel-form" id="avatar-form">
+            <div class="panel-actions">
+              <button class="panel-action-button" type="button" data-panel-section="avatar-section">上传头像</button>
+              <button class="panel-action-button" type="button" data-panel-section="phone-section">修改通知手机号</button>
+              <button class="panel-action-button" type="button" data-panel-section="password-section">修改密码</button>
+            </div>
+
+            <form class="panel-form hidden" id="avatar-section">
               <label>
                 <span>上传头像</span>
                 <input id="avatar-upload" type="file" accept="image/*" />
               </label>
             </form>
 
-            <form class="panel-form" id="settings-form">
+            <form class="panel-form hidden" id="phone-section">
               <label>
                 <span>通知手机号</span>
                 <input id="notification-phone" type="tel" />
@@ -57,7 +63,7 @@
               <p class="form-message" id="settings-message"></p>
             </form>
 
-            <form class="panel-form" id="password-form">
+            <form class="panel-form hidden" id="password-section">
               <label>
                 <span>当前密码</span>
                 <input id="current-password" type="password" autocomplete="current-password" />

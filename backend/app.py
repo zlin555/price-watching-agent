@@ -271,6 +271,10 @@ def user_profile_from_record(user: dict[str, str | datetime]) -> UserProfile:
 
 
 def extract_price_from_text(text: str) -> float | None:
+    text = re.sub(r"\s+", " ", text.strip())
+    if not text:
+        return None
+
     patterns = [
         r"\$\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)",
         r"USD\s?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?)",
@@ -287,7 +291,22 @@ def extract_price_from_text(text: str) -> float | None:
 
     if not candidates:
         return None
-    return min(price for price in candidates if price > 0)
+    valid_candidates = [price for price in candidates if 0 < price < 1_000_000]
+    if not valid_candidates:
+        return None
+    return valid_candidates[0]
+
+
+def parse_numeric_price(value: str | None) -> float | None:
+    if not value:
+        return None
+    match = re.search(r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)", value)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
 
 
 def tokenize(text: str) -> list[str]:
@@ -324,7 +343,54 @@ def build_user_profile_text(owner_phone: str) -> str:
     return f"{watch_text} {store_text} {liked_products}".strip()
 
 
+def extract_stock_symbol(target: str) -> str | None:
+    direct_symbol = re.fullmatch(r"[A-Z]{1,6}(?:\.[A-Z])?", target.strip().upper())
+    if direct_symbol:
+        return direct_symbol.group(0)
+
+    stock_patterns = [
+        r"/stocks/([A-Z]{1,6}(?:\.[A-Z])?)",
+        r"/quote/([A-Z]{1,6}(?:\.[A-Z])?)",
+        r"symbol=([A-Z]{1,6}(?:\.[A-Z])?)",
+    ]
+    for pattern in stock_patterns:
+        match = re.search(pattern, target, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def fetch_stock_price(symbol: str) -> tuple[float | None, str | None]:
+    try:
+        response = requests.get(
+            f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbol}",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0 PricePilot/0.1"},
+        )
+        response.raise_for_status()
+        results = response.json().get("quoteResponse", {}).get("result", [])
+    except requests.RequestException as error:
+        return None, str(error)
+    except ValueError:
+        return None, "Invalid stock quote response"
+
+    if not results:
+        return None, f"No quote found for {symbol}"
+    price = results[0].get("regularMarketPrice") or results[0].get("postMarketPrice")
+    if price is None:
+        return None, f"No market price found for {symbol}"
+    return float(price), None
+
+
 def fetch_latest_price(target: str) -> tuple[float | None, str | None]:
+    stock_symbol = extract_stock_symbol(target)
+    if stock_symbol:
+        stock_price, stock_error = fetch_stock_price(stock_symbol)
+        if stock_price is not None:
+            return stock_price, None
+        if not target.startswith(("http://", "https://")):
+            return None, stock_error
+
     if not target.startswith(("http://", "https://")):
         return None, "Only URL targets can be scraped in the current backend"
 
@@ -345,25 +411,55 @@ def fetch_latest_price(target: str) -> tuple[float | None, str | None]:
 
     soup = BeautifulSoup(response.text, "html.parser")
 
+    json_ld_prices: list[float] = []
+    for script in soup.select("script[type='application/ld+json']"):
+        for raw_value in re.findall(r'"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', script.get_text()):
+            price = parse_numeric_price(raw_value)
+            if price:
+                json_ld_prices.append(price)
+    if json_ld_prices:
+        return json_ld_prices[0], None
+
+    meta_selectors = [
+        "meta[property='product:price:amount']",
+        "meta[property='og:price:amount']",
+        "meta[name='twitter:data1']",
+        "meta[name='price']",
+    ]
+    for selector in meta_selectors:
+        for element in soup.select(selector):
+            price = parse_numeric_price(element.get("content"))
+            if price:
+                return price, None
+
     selectors = [
         "[itemprop='price']",
         "[data-testid*='price' i]",
         "[class*='price' i]",
         "[id*='price' i]",
-        "meta[property='product:price:amount']",
-        "meta[name='price']",
+        "[aria-label*='price' i]",
     ]
     for selector in selectors:
         for element in soup.select(selector):
-            raw_value = element.get("content") or element.get("value") or element.get_text(" ", strip=True)
-            price = extract_price_from_text(raw_value)
+            raw_value = (
+                element.get("content")
+                or element.get("value")
+                or element.get("aria-label")
+                or element.get_text(" ", strip=True)
+            )
+            nearby_text = element.parent.get_text(" ", strip=True) if element.parent else raw_value
+            price = extract_price_from_text(raw_value) or extract_price_from_text(nearby_text)
             if price:
                 return price, None
 
-    body_text = soup.get_text(" ", strip=True)
-    price = extract_price_from_text(body_text)
-    if price:
-        return price, None
+    title_text = " ".join(
+        node.get_text(" ", strip=True)
+        for node in soup.select("h1, [data-testid*='quote' i], [class*='quote' i], [class*='stock' i]")
+    )
+    if title_text:
+        price = extract_price_from_text(title_text)
+        if price:
+            return price, None
     return None, "No price-like value found on page"
 
 
@@ -617,24 +713,24 @@ def create_watch(payload: WatchCreate, token: str | None = None) -> WatchItem | 
     if not phone:
         return auth_error()
 
-    current_price = round(payload.target_price * 1.08, 2)
+    fetched_price, fetch_error = fetch_latest_price(payload.target)
+    now = datetime.now(timezone.utc)
     watch = WatchItem(
         id=len(demo_watches) + 1,
         owner_phone=phone,
         contact=payload.contact or phone,
-        current_price=current_price,
-        created_at=datetime.now(timezone.utc),
-        last_checked_at=datetime.now(timezone.utc),
-        next_check_at=datetime.now(timezone.utc) + timedelta(minutes=payload.check_interval_minutes),
-        status="ok",
+        current_price=fetched_price,
+        created_at=now,
+        last_checked_at=now if fetched_price is not None or fetch_error else None,
+        next_check_at=now + timedelta(minutes=payload.check_interval_minutes),
+        status="ok" if fetched_price is not None else "failed",
+        last_error=fetch_error,
         **payload.model_dump(exclude={"contact"}),
     )
     demo_watches.append(watch)
-    price_history[watch.id] = [
-        PricePoint(checked_at=datetime.now(timezone.utc), price=round(current_price * 1.13, 2)),
-        PricePoint(checked_at=datetime.now(timezone.utc), price=round(current_price * 1.09, 2)),
-        PricePoint(checked_at=datetime.now(timezone.utc), price=current_price),
-    ]
+    price_history[watch.id] = []
+    if fetched_price is not None:
+        price_history[watch.id].append(PricePoint(checked_at=now, price=fetched_price))
     return watch
 
 

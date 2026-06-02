@@ -114,11 +114,32 @@ async function selectWatch(watchId) {
     history = await response.json();
   }
   const prices = history.map((item) => item.price);
+  if (prices.length === 0) {
+    detailTitle.textContent = watch.title;
+    detailStatus.textContent = watch.last_error ? "检索失败" : "等待检索";
+    detailChart.innerHTML = "";
+    detailMeta.innerHTML = `
+      <span>当前价 待抓取</span>
+      <span>目标价 $${watch.target_price}</span>
+      <span>${watch.check_interval_minutes || 60} 分钟检索一次</span>
+      <span>${watch.last_error || watch.target}</span>
+    `;
+    const intervalInput = document.querySelector("#detail-interval");
+    if (intervalInput) {
+      intervalInput.value = watch.check_interval_minutes || 60;
+    }
+    renderWatches();
+    return;
+  }
   const maxPrice = Math.max(...prices, watch.target_price, 1);
 
   detailTitle.textContent = watch.title;
   detailStatus.textContent = describeDirection(watch.direction, watch.target_price);
   detailStatus.classList.add("success");
+  const intervalInput = document.querySelector("#detail-interval");
+  if (intervalInput) {
+    intervalInput.value = watch.check_interval_minutes || 60;
+  }
   detailChart.innerHTML = prices
     .map((price) => `<span style="height: ${Math.max((price / maxPrice) * 92, 14)}%" title="$${price}"></span>`)
     .join("");
@@ -337,7 +358,18 @@ document.querySelector("#avatar-upload").addEventListener("change", (event) => {
   reader.readAsDataURL(file);
 });
 
-document.querySelector("#settings-form").addEventListener("submit", async (event) => {
+document.querySelectorAll(".panel-action-button").forEach((button) => {
+  button.addEventListener("click", () => {
+    const sectionId = button.dataset.panelSection;
+    document.querySelectorAll(".panel-form").forEach((section) => {
+      section.classList.toggle("hidden", section.id !== sectionId);
+    });
+    document.querySelectorAll(".panel-action-button").forEach((item) => item.classList.remove("active"));
+    button.classList.add("active");
+  });
+});
+
+document.querySelector("#phone-section").addEventListener("submit", async (event) => {
   event.preventDefault();
   settingsMessage.textContent = "正在保存...";
   localStorage.setItem("pricepilot_notification_phone", notificationPhoneInput.value.trim());
@@ -351,7 +383,7 @@ document.querySelector("#settings-form").addEventListener("submit", async (event
   settingsMessage.textContent = "已保存";
 });
 
-document.querySelector("#password-form").addEventListener("submit", async (event) => {
+document.querySelector("#password-section").addEventListener("submit", async (event) => {
   event.preventDefault();
   passwordMessage.textContent = "正在修改...";
   if (usingLocalDemo) {
