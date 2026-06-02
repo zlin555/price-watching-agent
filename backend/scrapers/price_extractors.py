@@ -163,7 +163,7 @@ def prices_from_text(text: str) -> list[float]:
 
 def add_candidate(
     candidates: list[PriceCandidate],
-    seen: set[tuple[float, str, str | None]],
+    seen: set[tuple[float, str, str]],
     price: float | None,
     label: str,
     strategy: str,
@@ -174,10 +174,10 @@ def add_candidate(
 ) -> None:
     if price is None:
         return
-    key = (round(price, 4), strategy, selector)
-    if key in seen:
+    seen_key = (round(price, 4), strategy, key)
+    if seen_key in seen:
         return
-    seen.add(key)
+    seen.add(seen_key)
     candidates.append(
         PriceCandidate(
             price=price,
@@ -200,7 +200,7 @@ def load_soup(url: str) -> tuple[BeautifulSoup | None, str | None]:
     return BeautifulSoup(response.text, "html.parser"), None
 
 
-def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str | None]]) -> None:
+def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str]]) -> None:
     for index, script in enumerate(soup.select("script[type='application/ld+json']")):
         raw = script.get_text(strip=True)
         if not raw:
@@ -244,7 +244,7 @@ def extract_json_ld_prices(soup: BeautifulSoup, candidates: list[PriceCandidate]
             )
 
 
-def extract_meta_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str | None]]) -> None:
+def extract_meta_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str]]) -> None:
     selectors = [
         "meta[property='product:price:amount']",
         "meta[property='og:price:amount']",
@@ -268,7 +268,7 @@ def extract_meta_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
             )
 
 
-def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str | None]]) -> None:
+def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str]]) -> None:
     selectors = [
         "[itemprop='price']",
         "[data-testid*='price' i]",
@@ -299,7 +299,30 @@ def extract_selector_prices(soup: BeautifulSoup, candidates: list[PriceCandidate
                 )
 
 
-def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str | None]]) -> None:
+def price_occurrences_with_context(text: str, limit: int = 80) -> list[tuple[float, str, int]]:
+    pattern = re.compile(
+        r"(?:\$\s?|USD\s?)?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)(?:\s?(?:USD|dollars))?",
+        flags=re.IGNORECASE,
+    )
+    occurrences: list[tuple[float, str, int]] = []
+    for index, match in enumerate(pattern.finditer(text)):
+        raw_match = match.group(0)
+        raw_lower = raw_match.lower()
+        if "$" not in raw_match and "usd" not in raw_lower and "dollars" not in raw_lower:
+            continue
+        price = parse_numeric_price(match.group(1))
+        if price is None:
+            continue
+        start = max(match.start() - 90, 0)
+        end = min(match.end() + 90, len(text))
+        context = re.sub(r"\s+", " ", text[start:end]).strip()
+        occurrences.append((price, context, index))
+        if len(occurrences) >= limit:
+            break
+    return occurrences
+
+
+def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], seen: set[tuple[float, str, str]]) -> None:
     priority_text = " ".join(
         node.get_text(" ", strip=True)
         for node in soup.select("h1, h2, [class*='hero' i], [class*='quote' i], [class*='stock' i]")
@@ -318,20 +341,20 @@ def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
         )
 
     if len(candidates) >= 8:
-        return
+        pass
 
     body_text = soup.get_text(" ", strip=True)
-    for price_index, price in enumerate(prices_from_text(body_text)[:12]):
+    for price, context, price_index in price_occurrences_with_context(body_text, limit=80):
         add_candidate(
             candidates,
             seen,
             price,
             f"Page text ${price}",
             "text",
-            stable_source_key("text", "body-text", body_text[:500], f"body:{price_index}"),
+            stable_source_key("text", "body-text", context, f"body:{price_index}"),
             "body-text",
-            0.3,
-            body_text[:500],
+            0.35,
+            context,
         )
 
 
@@ -351,13 +374,13 @@ def extract_price_candidates(target: str) -> tuple[list[PriceCandidate], str | N
         return [], error
 
     candidates: list[PriceCandidate] = []
-    seen: set[tuple[float, str, str | None]] = set()
+    seen: set[tuple[float, str, str]] = set()
     extract_json_ld_prices(soup, candidates, seen)
     extract_meta_prices(soup, candidates, seen)
     extract_selector_prices(soup, candidates, seen)
     extract_text_prices(soup, candidates, seen)
-    candidates.sort(key=lambda candidate: candidate.confidence, reverse=True)
-    return candidates[:20], None if candidates else "No price candidates found"
+    candidates.sort(key=lambda candidate: (candidate.confidence, -candidate.price), reverse=True)
+    return candidates[:80], None if candidates else "No price candidates found"
 
 
 def fetch_selected_price(

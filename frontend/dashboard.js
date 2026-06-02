@@ -478,7 +478,28 @@ refreshButton.addEventListener("click", async () => {
     return;
   }
   refreshButton.textContent = "检索中...";
-  if (!usingLocalDemo) {
+  if (usingLocalDemo) {
+    const updated = getLocalWatches().map((watch) => {
+      if (watch.id !== selectedWatchId) {
+        return watch;
+      }
+      const candidates = getLocalPriceCandidates(watch.target);
+      const candidate =
+        candidates.find((item) => item.key === watch.extraction_key) ||
+        candidates.find((item) => item.strategy === watch.extraction_strategy && item.selector === watch.extraction_selector) ||
+        candidates[0];
+      return {
+        ...watch,
+        current_price: candidate ? Number(candidate.price) : watch.current_price,
+        last_checked_at: new Date().toISOString(),
+        next_check_at: new Date(Date.now() + (watch.check_interval_minutes || 60) * 60 * 1000).toISOString(),
+        status: candidate ? "ok" : "failed",
+        last_error: candidate ? null : "No matching candidate found",
+        last_candidates: candidates,
+      };
+    });
+    localStorage.setItem("pricepilot_watches", JSON.stringify(updated));
+  } else {
     await fetch(apiUrl(`/watches/${selectedWatchId}/refresh`), { method: "POST" });
   }
   await loadWatches();
@@ -537,13 +558,6 @@ const productList = document.querySelector("#product-list");
 
 let storeWatches = [];
 let selectedStoreWatchId = null;
-
-document.addEventListener("click", () => {
-  const selected = watches.find((watch) => watch.id === selectedWatchId);
-  if (selected && detailIntervalInput) {
-    detailIntervalInput.value = selected.check_interval_minutes || 60;
-  }
-});
 
 priceIntervalForm.addEventListener("submit", async (event) => {
   event.preventDefault();
