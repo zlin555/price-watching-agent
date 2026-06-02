@@ -22,3 +22,20 @@
 frontend/index.html
 ```
 
+## 后端本地启动
+
+```powershell
+cd backend
+pip install -r requirements.txt
+uvicorn app:app --reload
+```
+
+## Hugging Face 后端部署
+
+项目根目录已提供 `Dockerfile`。创建 Hugging Face Space 时选择 Docker，然后把后端 API 地址配置到前端即可。
+
+后续接 Aiven PostgreSQL 时需要把连接串配置为环境变量：
+
+```text
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+```

@@ -8,10 +8,19 @@ const detailStatus = document.querySelector("#detail-status");
 const detailChart = document.querySelector("#detail-chart");
 const detailMeta = document.querySelector("#detail-meta");
 const userPhone = document.querySelector("#user-phone");
-const profilePhone = document.querySelector("#profile-phone");
-const profileWatchCount = document.querySelector("#profile-watch-count");
+const panelPhone = document.querySelector("#panel-phone");
+const panelWatchCount = document.querySelector("#panel-watch-count");
+const panelStatus = document.querySelector("#panel-status");
 const newWatchForm = document.querySelector("#new-watch-form");
 const watchMessage = document.querySelector("#watch-message");
+const userMenuButton = document.querySelector("#user-menu-button");
+const userPanel = document.querySelector("#user-panel");
+const notificationPhoneInput = document.querySelector("#notification-phone");
+const settingsMessage = document.querySelector("#settings-message");
+const passwordMessage = document.querySelector("#password-message");
+const headerAvatar = document.querySelector("#header-avatar");
+const panelAvatar = document.querySelector("#panel-avatar");
+const refreshButton = document.querySelector("#refresh-watch");
 
 let watches = [];
 let selectedWatchId = null;
@@ -22,7 +31,10 @@ if (!token) {
 }
 
 userPhone.textContent = phone || "已登录用户";
-profilePhone.textContent = phone || "已登录用户";
+panelPhone.textContent = phone || "已登录用户";
+notificationPhoneInput.value = localStorage.getItem("pricepilot_notification_phone") || phone || "";
+loadSavedAvatar();
+loadProfile();
 
 function apiUrl(path) {
   const separator = path.includes("?") ? "&" : "?";
@@ -53,7 +65,8 @@ async function loadWatches() {
 }
 
 function renderWatches() {
-  profileWatchCount.textContent = watches.length;
+  panelWatchCount.textContent = watches.length;
+  panelStatus.textContent = watches.some((watch) => watch.status === "failed") ? "Needs attention" : "Active";
   watchList.innerHTML = "";
 
   watches.forEach((watch) => {
@@ -66,6 +79,7 @@ function renderWatches() {
     infoButton.innerHTML = `
       <strong>${watch.title}</strong>
       <span>${watch.target}</span>
+      <span>${watch.check_interval_minutes || 60} 分钟检索一次 · ${watch.status || "idle"}</span>
     `;
     infoButton.addEventListener("click", () => selectWatch(watch.id));
 
@@ -108,6 +122,8 @@ async function selectWatch(watchId) {
   detailMeta.innerHTML = `
     <span>当前价 ${watch.current_price ? `$${watch.current_price}` : "待抓取"}</span>
     <span>目标价 $${watch.target_price}</span>
+    <span>${watch.check_interval_minutes || 60} 分钟检索一次</span>
+    <span>下次检索 ${formatTime(watch.next_check_at)}</span>
     <span>${watch.target}</span>
   `;
   renderWatches();
@@ -156,6 +172,7 @@ newWatchForm.addEventListener("submit", async (event) => {
     target: document.querySelector("#watch-target").value.trim(),
     target_price: Number(document.querySelector("#watch-price").value),
     direction: document.querySelector("#watch-direction").value,
+    check_interval_minutes: Number(document.querySelector("#watch-interval").value),
   };
 
   if (usingLocalDemo) {
@@ -168,6 +185,8 @@ newWatchForm.addEventListener("submit", async (event) => {
       current_price: Number((payload.target_price * 1.08).toFixed(2)),
       created_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + payload.check_interval_minutes * 60 * 1000).toISOString(),
+      status: "ok",
     };
     localWatches.push(watch);
     localStorage.setItem("pricepilot_watches", JSON.stringify(localWatches));
@@ -222,10 +241,13 @@ function getLocalWatches() {
       target: "https://example.com/product/macbook-air",
       target_price: 899,
       direction: "below",
+      check_interval_minutes: 60,
       contact: phone,
       current_price: 849,
       created_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      status: "ok",
     },
     {
       id: 2,
@@ -234,10 +256,13 @@ function getLocalWatches() {
       target: "https://example.com/flights/ord-sfo",
       target_price: 280,
       direction: "below",
+      check_interval_minutes: 120,
       contact: phone,
       current_price: 318,
       created_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + 120 * 60 * 1000).toISOString(),
+      status: "ok",
     },
     {
       id: 3,
@@ -246,10 +271,13 @@ function getLocalWatches() {
       target: "NVDA",
       target_price: 150,
       direction: "above",
+      check_interval_minutes: 30,
       contact: phone,
       current_price: 143.2,
       created_at: new Date().toISOString(),
       last_checked_at: new Date().toISOString(),
+      next_check_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      status: "ok",
     },
   ];
   localStorage.setItem("pricepilot_watches", JSON.stringify(seed));
@@ -262,4 +290,128 @@ function getLocalHistory(watch) {
     checked_at: new Date().toISOString(),
     price: Number((current * factor).toFixed(2)),
   }));
+}
+
+function formatTime(value) {
+  if (!value) {
+    return "待安排";
+  }
+  return new Date(value).toLocaleString();
+}
+
+userMenuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  userPanel.classList.toggle("hidden");
+  userMenuButton.setAttribute("aria-expanded", String(!userPanel.classList.contains("hidden")));
+});
+
+userPanel.addEventListener("click", (event) => {
+  event.stopPropagation();
+});
+
+document.addEventListener("click", () => {
+  userPanel.classList.add("hidden");
+  userMenuButton.setAttribute("aria-expanded", "false");
+});
+
+document.querySelector("#avatar-upload").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) {
+    return;
+  }
+  const reader = new FileReader();
+  reader.addEventListener("load", async () => {
+    localStorage.setItem("pricepilot_avatar", reader.result);
+    setAvatar(reader.result);
+    if (!usingLocalDemo) {
+      await fetch(apiUrl("/profile"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar_data_url: reader.result }),
+      });
+    }
+  });
+  reader.readAsDataURL(file);
+});
+
+document.querySelector("#settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  settingsMessage.textContent = "正在保存...";
+  localStorage.setItem("pricepilot_notification_phone", notificationPhoneInput.value.trim());
+  if (!usingLocalDemo) {
+    await fetch(apiUrl("/profile"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notification_phone: notificationPhoneInput.value.trim() }),
+    });
+  }
+  settingsMessage.textContent = "已保存";
+});
+
+document.querySelector("#password-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  passwordMessage.textContent = "正在修改...";
+  if (usingLocalDemo) {
+    passwordMessage.textContent = "Demo 模式已记录修改";
+    return;
+  }
+  const response = await fetch(apiUrl("/profile/password"), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      current_password: document.querySelector("#current-password").value,
+      new_password: document.querySelector("#new-password").value,
+    }),
+  });
+  const data = await response.json();
+  passwordMessage.textContent = response.ok ? "密码已修改" : data.detail;
+});
+
+refreshButton.addEventListener("click", async () => {
+  if (!selectedWatchId) {
+    return;
+  }
+  refreshButton.textContent = "检索中...";
+  if (!usingLocalDemo) {
+    await fetch(apiUrl(`/watches/${selectedWatchId}/refresh`), { method: "POST" });
+  }
+  await loadWatches();
+  refreshButton.textContent = "立即检索";
+});
+
+function loadSavedAvatar() {
+  const savedAvatar = localStorage.getItem("pricepilot_avatar");
+  if (savedAvatar) {
+    setAvatar(savedAvatar);
+  }
+}
+
+function setAvatar(dataUrl) {
+  [headerAvatar, panelAvatar].forEach((avatar) => {
+    avatar.textContent = "";
+    avatar.style.backgroundImage = `url("${dataUrl}")`;
+    avatar.style.backgroundSize = "cover";
+    avatar.style.backgroundPosition = "center";
+  });
+}
+
+async function loadProfile() {
+  if (usingLocalDemo) {
+    return;
+  }
+  try {
+    const response = await fetch(apiUrl("/profile"));
+    const profile = await response.json();
+    if (!response.ok) {
+      return;
+    }
+    userPhone.textContent = profile.phone;
+    panelPhone.textContent = profile.phone;
+    notificationPhoneInput.value = profile.notification_phone || profile.phone;
+    if (profile.avatar_data_url) {
+      setAvatar(profile.avatar_data_url);
+    }
+  } catch {
+    usingLocalDemo = true;
+  }
 }

@@ -15,7 +15,6 @@
       <nav class="side-nav" aria-label="内部导航">
         <button class="side-link active" type="button" data-view="board">价格看板</button>
         <button class="side-link" type="button" data-view="new-watch">新增追踪</button>
-        <button class="side-link" type="button" data-view="profile">Profile</button>
       </nav>
       <button class="ghost-button logout-button" type="button">退出登录</button>
     </aside>
@@ -26,9 +25,50 @@
           <p class="panel-label">内部页面</p>
           <h1>价格追踪看板</h1>
         </div>
-        <div class="user-chip">
-          <span class="avatar small">U</span>
-          <span id="user-phone">未登录</span>
+        <div class="user-menu">
+          <button class="user-chip" type="button" id="user-menu-button" aria-expanded="false">
+            <span class="avatar small" id="header-avatar">U</span>
+            <span id="user-phone">未登录</span>
+          </button>
+          <section class="user-panel hidden" id="user-panel" aria-label="用户设置面板">
+            <div class="user-panel-head">
+              <span class="avatar panel-avatar" id="panel-avatar">U</span>
+              <div>
+                <p class="panel-label">User Panel</p>
+                <h2 id="panel-phone">未登录</h2>
+                <p class="muted"><span id="panel-watch-count">0</span> 个追踪任务 · <span id="panel-status">Active</span></p>
+              </div>
+            </div>
+
+            <form class="panel-form" id="avatar-form">
+              <label>
+                <span>上传头像</span>
+                <input id="avatar-upload" type="file" accept="image/*" />
+              </label>
+            </form>
+
+            <form class="panel-form" id="settings-form">
+              <label>
+                <span>通知手机号</span>
+                <input id="notification-phone" type="tel" />
+              </label>
+              <button class="submit-button compact-button" type="submit">保存手机号</button>
+              <p class="form-message" id="settings-message"></p>
+            </form>
+
+            <form class="panel-form" id="password-form">
+              <label>
+                <span>当前密码</span>
+                <input id="current-password" type="password" autocomplete="current-password" />
+              </label>
+              <label>
+                <span>新密码</span>
+                <input id="new-password" type="password" autocomplete="new-password" />
+              </label>
+              <button class="submit-button compact-button" type="submit">修改密码</button>
+              <p class="form-message" id="password-message"></p>
+            </form>
+          </section>
         </div>
       </header>
 
@@ -53,6 +93,7 @@
           </div>
           <div class="chart large-chart" id="detail-chart" aria-label="详细价格趋势图"></div>
           <div class="trend-meta" id="detail-meta"></div>
+          <button class="secondary-link refresh-button" id="refresh-watch" type="button">立即检索</button>
         </section>
       </section>
 
@@ -86,28 +127,19 @@
               </select>
             </label>
           </div>
+          <label>
+            <span>自动检索间隔</span>
+            <select id="watch-interval">
+              <option value="15">每 15 分钟</option>
+              <option value="30">每 30 分钟</option>
+              <option value="60" selected>每 1 小时</option>
+              <option value="360">每 6 小时</option>
+              <option value="1440">每天</option>
+            </select>
+          </label>
           <button class="submit-button" type="submit">添加追踪任务</button>
           <p class="form-message" id="watch-message"></p>
         </form>
-      </section>
-
-      <section class="panel profile-panel hidden" data-view-panel="profile">
-        <div class="avatar">U</div>
-        <div>
-          <p class="panel-label">用户 Profile</p>
-          <h2 id="profile-phone">未登录</h2>
-          <p class="muted">当前版本会把手机号作为用户名和默认提醒联系方式。</p>
-        </div>
-        <dl class="profile-stats">
-          <div>
-            <dt>追踪任务</dt>
-            <dd id="profile-watch-count">0</dd>
-          </div>
-          <div>
-            <dt>登录状态</dt>
-            <dd>Active</dd>
-          </div>
-        </dl>
       </section>
     </main>
 
