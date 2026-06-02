@@ -337,12 +337,11 @@ def extract_text_prices(soup: BeautifulSoup, candidates: list[PriceCandidate], s
 
 def extract_price_candidates(target: str) -> tuple[list[PriceCandidate], str | None]:
     symbol = extract_stock_symbol(target)
-    if symbol:
+    if symbol and not target.startswith(("http://", "https://")):
         stock_candidate = fetch_stock_candidate(symbol)
         if stock_candidate:
             return [stock_candidate], None
-        if not target.startswith(("http://", "https://")):
-            return [], f"No quote found for {symbol}"
+        return [], f"No quote found for {symbol}"
 
     if not target.startswith(("http://", "https://")):
         return [], "Only URL targets or stock symbols can be extracted"

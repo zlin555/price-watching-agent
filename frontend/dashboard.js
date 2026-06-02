@@ -820,9 +820,40 @@ function getLocalProducts(watch) {
 }
 
 function getLocalPriceCandidates(target) {
-  const stockMatch = target.match(/(?:stocks\/|quote\/)?([A-Z]{2,6})(?:\?|$)/i);
-  if (stockMatch || /^[A-Z]{2,6}$/i.test(target)) {
-    const symbol = (stockMatch?.[1] || target).toUpperCase();
+  if (target.includes("robinhood.com") || target.includes("/stocks/")) {
+    return [
+      {
+        price: 226.06,
+        label: "Visible page headline price",
+        strategy: "selector",
+        key: "selector:headline-stock-price-demo",
+        selector: "h1 + price text",
+        confidence: 0.86,
+        snippet: "NVIDIA $226.06 +$1.70 Today",
+      },
+      {
+        price: 1.7,
+        label: "Daily movement amount",
+        strategy: "text",
+        key: "text:daily-change-demo",
+        selector: "prominent-text",
+        confidence: 0.38,
+        snippet: "+$1.70 (+0.76%) Today",
+      },
+      {
+        price: 0,
+        label: "Estimated cost in order panel",
+        strategy: "selector",
+        key: "selector:estimated-cost-demo",
+        selector: "[class*='order']",
+        confidence: 0.25,
+        snippet: "Estimated Cost $0.00",
+      },
+    ];
+  }
+
+  if (/^[A-Z]{2,6}$/i.test(target)) {
+    const symbol = target.toUpperCase();
     return [
       {
         price: symbol === "NVDA" ? 226.06 : 143.2,
