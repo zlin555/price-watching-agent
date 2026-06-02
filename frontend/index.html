@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PricePilot | 自定义比价提醒</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="PricePilot 首页">
+        <span class="brand-mark">P</span>
+        <span>PricePilot</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="#tracking">追踪</a>
+        <a href="#trends">趋势</a>
+        <a href="#profile">Profile</a>
+      </nav>
+      <div class="auth-actions">
+        <button class="ghost-button" type="button">登录</button>
+        <button class="primary-button" type="button">注册</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">商品、旅行、股票，一起盯</p>
+          <h1>把你关心的价格交给系统定时跟踪。</h1>
+          <p class="hero-text">
+            输入任意商品链接、机票酒店页面，或者股票代码，设置目标区间。价格触发条件后，系统会通过你留下的联系方式提醒你操作。
+          </p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#tracking">添加追踪</a>
+            <a class="secondary-link" href="#trends">查看趋势</a>
+          </div>
+        </div>
+
+        <form class="watch-form" id="tracking">
+          <div class="form-header">
+            <h2>新增价格追踪</h2>
+            <span class="status-pill">Demo</span>
+          </div>
+
+          <label>
+            <span>链接或股票代码</span>
+            <input type="text" value="https://example.com/product/macbook-air" />
+          </label>
+
+          <div class="form-grid">
+            <label>
+              <span>目标价格</span>
+              <input type="number" value="899" />
+            </label>
+            <label>
+              <span>提醒方向</span>
+              <select>
+                <option>低于目标价提醒</option>
+                <option>高于目标价提醒</option>
+                <option>任意明显波动提醒</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>手机或联系方式</span>
+            <input type="text" value="+1 217 000 0000" />
+          </label>
+
+          <button class="submit-button" type="button">保存到我的 Profile</button>
+        </form>
+      </section>
+
+      <section class="dashboard" aria-label="价格追踪仪表盘">
+        <aside class="panel profile-panel" id="profile">
+          <div class="avatar">Z</div>
+          <div>
+            <p class="panel-label">当前用户</p>
+            <h2>Demo Profile</h2>
+            <p class="muted">3 个追踪任务 · 手机提醒已开启</p>
+          </div>
+          <dl class="profile-stats">
+            <div>
+              <dt>已触发</dt>
+              <dd>2</dd>
+            </div>
+            <div>
+              <dt>平均降幅</dt>
+              <dd>12%</dd>
+            </div>
+          </dl>
+        </aside>
+
+        <section class="panel trend-panel" id="trends">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">价格趋势</p>
+              <h2>MacBook Air 价格变化</h2>
+            </div>
+            <span class="status-pill success">低于目标价</span>
+          </div>
+          <div class="chart" aria-label="价格趋势示意图">
+            <span style="height: 62%"></span>
+            <span style="height: 72%"></span>
+            <span style="height: 55%"></span>
+            <span style="height: 47%"></span>
+            <span style="height: 39%"></span>
+            <span style="height: 42%"></span>
+            <span style="height: 31%"></span>
+          </div>
+          <div class="trend-meta">
+            <span>当前价 $849</span>
+            <span>目标价 $899</span>
+            <span>上次抓取 10 分钟前</span>
+          </div>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">关注列表</p>
+              <h2>我的追踪任务</h2>
+            </div>
+          </div>
+
+          <ul class="watch-list">
+            <li>
+              <div>
+                <strong>MacBook Air</strong>
+                <span>低于 $899 提醒</span>
+              </div>
+              <b>$849</b>
+            </li>
+            <li>
+              <div>
+                <strong>ORD 到 SFO 机票</strong>
+                <span>低于 $280 提醒</span>
+              </div>
+              <b>$318</b>
+            </li>
+            <li>
+              <div>
+                <strong>NVDA</strong>
+                <span>高于 $150 提醒</span>
+              </div>
+              <b>$143.20</b>
+            </li>
+          </ul>
+        </section>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
+
