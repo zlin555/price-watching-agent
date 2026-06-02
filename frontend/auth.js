@@ -1,4 +1,7 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE =
+  window.PRICEPILOT_API_BASE ||
+  localStorage.getItem("pricepilot_api_base") ||
+  "https://zlin329-price-wtaching-agent.hf.space";
 const tabButtons = document.querySelectorAll(".tab-button");
 const form = document.querySelector(".auth-form");
 const phoneInput = document.querySelector("#phone");
