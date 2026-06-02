@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录 | PricePilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-shell">
+      <section class="auth-copy">
+        <a class="brand" href="index.html" aria-label="PricePilot 首页">
+          <span class="brand-mark">P</span>
+          <span>PricePilot</span>
+        </a>
+        <h1>登录后管理你的价格追踪任务。</h1>
+        <p class="hero-text">
+          手机号会作为用户名和默认提醒联系方式。Demo 账号：+1 217 000 0000，密码：demo1234。
+        </p>
+      </section>
+
+      <section class="auth-card" aria-label="登录注册表单">
+        <div class="tabs" role="tablist">
+          <button class="tab-button active" type="button" data-mode="login">登录</button>
+          <button class="tab-button" type="button" data-mode="register">注册</button>
+        </div>
+
+        <form class="auth-form">
+          <label>
+            <span>手机号 / 用户名</span>
+            <input id="phone" type="tel" value="+1 217 000 0000" autocomplete="tel" />
+          </label>
+
+          <label>
+            <span>密码</span>
+            <input id="password" type="password" value="demo1234" autocomplete="current-password" />
+          </label>
+
+          <button class="submit-button" type="submit">登录并进入看板</button>
+          <p class="form-message" role="status"></p>
+        </form>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+  </body>
+</html>

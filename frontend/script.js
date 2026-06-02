@@ -7,9 +7,6 @@ submitButton.addEventListener("click", () => {
   submitButton.textContent = "已加入追踪列表";
 
   window.setTimeout(() => {
-    statusPill.textContent = "Demo";
-    statusPill.classList.remove("success");
-    submitButton.textContent = "保存到我的 Profile";
-  }, 2200);
+    window.location.href = "auth.html?mode=register";
+  }, 900);
 });
-

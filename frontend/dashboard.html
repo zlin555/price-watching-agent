@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>看板 | PricePilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="app-page">
+    <aside class="sidebar">
+      <a class="brand" href="index.html" aria-label="PricePilot 首页">
+        <span class="brand-mark">P</span>
+        <span>PricePilot</span>
+      </a>
+      <nav class="side-nav" aria-label="内部导航">
+        <button class="side-link active" type="button" data-view="board">价格看板</button>
+        <button class="side-link" type="button" data-view="new-watch">新增追踪</button>
+        <button class="side-link" type="button" data-view="profile">Profile</button>
+      </nav>
+      <button class="ghost-button logout-button" type="button">退出登录</button>
+    </aside>
+
+    <main class="app-main">
+      <header class="app-header">
+        <div>
+          <p class="panel-label">内部页面</p>
+          <h1>价格追踪看板</h1>
+        </div>
+        <div class="user-chip">
+          <span class="avatar small">U</span>
+          <span id="user-phone">未登录</span>
+        </div>
+      </header>
+
+      <section class="app-layout" data-view-panel="board">
+        <section class="panel list-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">任务列表</p>
+              <h2>选择一个追踪链接</h2>
+            </div>
+          </div>
+          <ul class="watch-list interactive-list" id="watch-list"></ul>
+        </section>
+
+        <section class="panel trend-panel detail-panel">
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">详细价格波动</p>
+              <h2 id="detail-title">请选择一个任务</h2>
+            </div>
+            <span class="status-pill" id="detail-status">等待选择</span>
+          </div>
+          <div class="chart large-chart" id="detail-chart" aria-label="详细价格趋势图"></div>
+          <div class="trend-meta" id="detail-meta"></div>
+        </section>
+      </section>
+
+      <section class="panel add-watch-panel hidden" data-view-panel="new-watch">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">新增任务</p>
+            <h2>添加新的跟踪链接或股票代码</h2>
+          </div>
+        </div>
+        <form class="watch-form compact-form" id="new-watch-form">
+          <label>
+            <span>任务名称</span>
+            <input id="watch-title" type="text" value="新商品追踪" />
+          </label>
+          <label>
+            <span>商品链接 / 旅行链接 / 股票代码</span>
+            <input id="watch-target" type="text" value="https://example.com/product" />
+          </label>
+          <div class="form-grid">
+            <label>
+              <span>目标价格</span>
+              <input id="watch-price" type="number" value="100" />
+            </label>
+            <label>
+              <span>提醒方向</span>
+              <select id="watch-direction">
+                <option value="below">低于目标价提醒</option>
+                <option value="above">高于目标价提醒</option>
+                <option value="change">任意明显波动提醒</option>
+              </select>
+            </label>
+          </div>
+          <button class="submit-button" type="submit">添加追踪任务</button>
+          <p class="form-message" id="watch-message"></p>
+        </form>
+      </section>
+
+      <section class="panel profile-panel hidden" data-view-panel="profile">
+        <div class="avatar">U</div>
+        <div>
+          <p class="panel-label">用户 Profile</p>
+          <h2 id="profile-phone">未登录</h2>
+          <p class="muted">当前版本会把手机号作为用户名和默认提醒联系方式。</p>
+        </div>
+        <dl class="profile-stats">
+          <div>
+            <dt>追踪任务</dt>
+            <dd id="profile-watch-count">0</dd>
+          </div>
+          <div>
+            <dt>登录状态</dt>
+            <dd>Active</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <script src="dashboard.js"></script>
+  </body>
+</html>

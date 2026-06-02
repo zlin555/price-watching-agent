@@ -372,14 +372,233 @@ dd {
   color: var(--accent-dark);
 }
 
+.auth-page,
+.app-page {
+  background: var(--bg);
+}
+
+.auth-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+  gap: 44px;
+  align-items: center;
+  min-height: 100vh;
+  padding: 48px min(6vw, 80px);
+}
+
+.auth-copy h1 {
+  margin-top: 56px;
+  font-size: clamp(2.4rem, 6vw, 5rem);
+}
+
+.auth-card {
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 22px;
+  padding: 6px;
+  background: var(--surface-soft);
+  border-radius: 8px;
+}
+
+.tab-button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tab-button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 20px rgba(37, 55, 75, 0.1);
+}
+
+.auth-form,
+.compact-form {
+  display: grid;
+  gap: 16px;
+}
+
+.form-message {
+  min-height: 22px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.app-page {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  height: 100vh;
+  padding: 24px;
+  background: #ffffff;
+  border-right: 1px solid var(--line);
+}
+
+.side-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.side-link {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+  text-align: left;
+}
+
+.side-link.active,
+.side-link:hover {
+  background: var(--surface-soft);
+  color: var(--accent-dark);
+}
+
+.logout-button {
+  margin-top: auto;
+}
+
+.app-main {
+  padding: 28px min(4vw, 48px) 48px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.app-header h1 {
+  margin-bottom: 0;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.avatar.small {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.4fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-panel,
+.add-watch-panel {
+  min-height: 420px;
+}
+
+.large-chart {
+  height: 300px;
+}
+
+.interactive-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.interactive-list li.active {
+  border-color: rgba(13, 139, 114, 0.42);
+  background: #f4fbf8;
+}
+
+.watch-select {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.watch-select strong,
+.watch-select span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-button {
+  min-height: 34px;
+  border: 1px solid #f0c9bf;
+  border-radius: 8px;
+  background: #fff7f4;
+  color: #9b3f27;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.hidden {
+  display: none;
+}
+
 @media (max-width: 980px) {
   .hero,
-  .dashboard {
+  .dashboard,
+  .auth-shell,
+  .app-layout {
     grid-template-columns: 1fr;
   }
 
   .hero {
     min-height: auto;
+  }
+
+  .app-page {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
   }
 }
 
@@ -413,5 +632,18 @@ dd {
   .secondary-link {
     justify-content: center;
   }
-}
 
+  .auth-shell,
+  .app-main {
+    padding: 24px;
+  }
+
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .interactive-list li {
+    grid-template-columns: 1fr;
+  }
+}
